@@ -1,0 +1,143 @@
+[
+ {
+  "id": "backlinks",
+  "page": "Production Deployment Runbook",
+  "space": "OPS",
+  "rows": [
+   {
+    "id": "5100",
+    "title": "Backend Onboarding",
+    "anchors": []
+   },
+   {
+    "id": "4216",
+    "title": "Database Failover Drill",
+    "anchors": []
+   },
+   {
+    "id": "4212",
+    "title": "Incident Severity Levels",
+    "anchors": [
+     "Rolling back"
+    ]
+   },
+   {
+    "id": "4213",
+    "title": "New Starter Checklist",
+    "anchors": [
+     "Emergency rollback"
+    ]
+   },
+   {
+    "id": "4211",
+    "title": "On-call Rotation",
+    "anchors": [
+     "Who to wake"
+    ]
+   },
+   {
+    "id": "4200",
+    "title": "Operations Home",
+    "anchors": []
+   },
+   {
+    "id": "4215",
+    "title": "Release Checklist",
+    "anchors": [
+     "Before you start"
+    ]
+   },
+   {
+    "id": "4217",
+    "title": "Runbook Index",
+    "anchors": []
+   },
+   {
+    "id": "4218",
+    "title": "Runbook Index",
+    "anchors": []
+   }
+  ],
+  "withheld": 1
+ },
+ {
+  "id": "health",
+  "space": "OPS",
+  "problems": [
+   {
+    "state": "anchormissing",
+    "meaning": "the page exists, but the heading it points at is gone",
+    "source": "New Starter Checklist",
+    "target": "Production Deployment Runbook",
+    "anchor": "Emergency rollback",
+    "reason": "\"Production Deployment Runbook\" exists, but has no heading called \"Emergency rollback\" any more. The link still opens the page and drops the reader at the top of it."
+   },
+   {
+    "state": "missing",
+    "meaning": "names a page that does not exist",
+    "source": "New Starter Checklist",
+    "target": "Laptop Setup",
+    "anchor": "",
+    "reason": "No page called \"Laptop Setup\" in OPS. It was renamed, moved or deleted."
+   },
+   {
+    "state": "missing",
+    "meaning": "names a page that does not exist",
+    "source": "On-call Rotation",
+    "target": "Escalation Policy 2024",
+    "anchor": "",
+    "reason": "No page called \"Escalation Policy 2024\" in OPS. It was renamed, moved or deleted."
+   },
+   {
+    "state": "missing",
+    "meaning": "names a page that does not exist",
+    "source": "Release Checklist",
+    "target": "Change Advisory Board",
+    "anchor": "",
+    "reason": "No page called \"Change Advisory Board\" in OPS. It was renamed, moved or deleted."
+   },
+   {
+    "state": "ambiguous",
+    "meaning": "names a title more than one page in the space carries",
+    "source": "Service Catalogue",
+    "target": "Runbook Index",
+    "anchor": "",
+    "reason": "2 pages in OPS are called \"Runbook Index\", so which one this link opens depends on Confluence."
+   }
+  ],
+  "counts": {
+   "pages": 14,
+   "links": 27,
+   "problems": 5
+  },
+  "finishedAt": 1788318840
+ },
+ {
+  "id": "orphans",
+  "space": "OPS",
+  "rows": [
+   {
+    "title": "Old Monitoring Thresholds",
+    "version": 2
+   },
+   {
+    "title": "Operations Home",
+    "version": 44
+   },
+   {
+    "title": "Q2 Capacity Notes",
+    "version": 6
+   },
+   {
+    "title": "Runbook Index",
+    "version": 2
+   },
+   {
+    "title": "Runbook Index",
+    "version": 1
+   }
+  ],
+  "total": 13,
+  "finishedAt": 1788318840
+ }
+]

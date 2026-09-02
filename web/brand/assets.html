@@ -1,0 +1,420 @@
+<title>Backlink Atlas — listing assets</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=Source+Sans+3:wght@400;600&display=swap">
+
+<style>
+  body { background: #EEE; font: 14px system-ui; padding: 16px; }
+  canvas { display: block; margin: 12px 0; max-width: 900px; box-shadow: 0 2px 8px rgba(0,0,0,.2); }
+  #log { font: 13px ui-monospace, monospace; white-space: pre; }
+</style>
+
+<div id="log">drawing…</div>
+<div id="canvases"></div>
+
+<script>
+/*
+ * The listing images, drawn on a canvas at exactly the sizes Atlassian asks
+ * for, so each file is the size it claims to be and carries no cursor and no
+ * browser chrome.
+ *
+ * The words inside the panels are not written here. They come from shots.json,
+ * which is the output of the real crawler over a sample wiki — so a screenshot
+ * cannot promise something the product would not say.
+ */
+
+/* The mark: many things pointing at one thing. */
+const GROUND_TOP = '#191C33', GROUND_BOTTOM = '#0D0F1C';
+const TRACE = '#7DD3E0';
+const FOCUS = '#FFC24B';
+
+/* Panel palette — the tokens Confluence itself uses. */
+const PAPER = '#FFFFFF', SURFACE = '#F7F8F9', LINE = '#DCDFE4';
+const TEXT = '#172B4D', DIM = '#626F86', FAINT = '#8590A2';
+
+const TONE = {
+  missing:       { bg: '#FFECEB', edge: '#E2483D', ink: '#AE2E24', label: 'Page is gone' },
+  anchormissing: { bg: '#FFF7D6', edge: '#B38600', ink: '#7F5F01', label: 'Heading is gone' },
+  ambiguous:     { bg: '#E9F2FE', edge: '#0C66E4', ink: '#0055CC', label: 'Two pages, one title' },
+};
+
+function rounded(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+}
+
+/** Wrap text to a width. Returns the y after the last line drawn. */
+function paragraph(ctx, text, x, y, maxWidth, lineHeight, maxLines = 99) {
+  const words = String(text).split(/\s+/);
+  let line = '';
+  let drawn = 0;
+  for (const word of words) {
+    const next = line ? `${line} ${word}` : word;
+    if (ctx.measureText(next).width > maxWidth && line) {
+      if (drawn + 1 === maxLines) { ctx.fillText(`${line}…`, x, y); return y + lineHeight; }
+      ctx.fillText(line, x, y);
+      y += lineHeight; drawn += 1;
+      line = word;
+    } else {
+      line = next;
+    }
+  }
+  if (line) { ctx.fillText(line, x, y); y += lineHeight; }
+  return y;
+}
+
+/**
+ * Traces converging on a single node.
+ *
+ * Each starts at the left edge at its own height and bends into the focus, so
+ * the picture reads as "all of these point at that one" — which is the whole
+ * product.
+ */
+function converge(ctx, { x, y, reach, spread, width, count = 5 }) {
+  for (let i = 0; i < count; i += 1) {
+    const t = count === 1 ? 0 : (i / (count - 1)) * 2 - 1;   // -1 … 1
+    const startY = y + t * spread;
+    const startX = x - reach;
+    const grad = ctx.createLinearGradient(startX, 0, x, 0);
+    grad.addColorStop(0, 'rgba(125, 211, 224, 0.10)');
+    grad.addColorStop(0.55, 'rgba(125, 211, 224, 0.55)');
+    grad.addColorStop(1, TRACE);
+
+    ctx.strokeStyle = grad;
+    ctx.lineWidth = width;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(startX, startY);
+    ctx.bezierCurveTo(startX + reach * 0.55, startY, x - reach * 0.30, y, x - width * 1.6, y);
+    ctx.stroke();
+  }
+}
+
+function focus(ctx, x, y, r, ground) {
+  ctx.beginPath(); ctx.arc(x, y, r * 2.1, 0, Math.PI * 2);
+  ctx.fillStyle = ground; ctx.fill();
+  ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2);
+  ctx.fillStyle = FOCUS; ctx.fill();
+}
+
+function darkGround(ctx, w, h) {
+  const g = ctx.createLinearGradient(0, 0, w, h);
+  g.addColorStop(0, GROUND_TOP);
+  g.addColorStop(1, GROUND_BOTTOM);
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, w, h);
+}
+
+/* --------------------------------- logo ---------------------------------- */
+
+function drawLogo(ctx) {
+  const g = ctx.createLinearGradient(0, 0, 0, 144);
+  g.addColorStop(0, GROUND_TOP); g.addColorStop(1, GROUND_BOTTOM);
+  ctx.fillStyle = g;
+  rounded(ctx, 0, 0, 144, 144, 32);
+  ctx.fill();
+
+  converge(ctx, { x: 104, y: 72, reach: 82, spread: 40, width: 6, count: 5 });
+  focus(ctx, 104, 72, 9, GROUND_BOTTOM);
+}
+
+/* -------------------------------- banner --------------------------------- */
+
+function drawWordmark(ctx, { w, h, nameSize, lineSize, x, nameY, lines, art }) {
+  darkGround(ctx, w, h);
+
+  ctx.fillStyle = '#F1F3F8';
+  ctx.font = `700 ${nameSize}px Archivo, sans-serif`;
+  ctx.fillText('Backlink Atlas', x, nameY);
+
+  ctx.font = `400 ${lineSize}px "Source Sans 3", sans-serif`;
+  let y = nameY + lineSize * 2.1;
+  for (const parts of lines) {
+    let cx = x;
+    for (const [text, colour] of parts) {
+      ctx.fillStyle = colour;
+      ctx.fillText(text, cx, y);
+      cx += ctx.measureText(text).width;
+    }
+    y += lineSize * 1.45;
+  }
+
+  ctx.save();
+  ctx.translate(art.x, art.y);
+  converge(ctx, { x: art.reach, y: 0, reach: art.reach, spread: art.spread, width: art.width, count: 6 });
+  focus(ctx, art.reach, 0, art.dot, '#0D0F1C');
+  ctx.restore();
+
+  ctx.fillStyle = '#5F6788';
+  ctx.font = `500 ${Math.round(lineSize * 0.55)}px Archivo, sans-serif`;
+  ctx.letterSpacing = '2px';
+  ctx.fillText('READS PAGES  ·  STORES CONNECTIONS  ·  SENDS NOTHING ANYWHERE', x, h - 46);
+  ctx.letterSpacing = '0px';
+}
+
+/* ------------------------------ screenshots ------------------------------ */
+
+function shell(ctx, subtitle) {
+  ctx.fillStyle = '#F1F2F4';
+  ctx.fillRect(0, 0, 1840, 900);
+
+  const X = 150, W = 1540;
+  rounded(ctx, X, 70, W, 760, 12);
+  ctx.fillStyle = PAPER; ctx.fill();
+  ctx.strokeStyle = LINE; ctx.lineWidth = 2; ctx.stroke();
+
+  ctx.fillStyle = TEXT;
+  ctx.font = '600 40px Archivo, sans-serif';
+  ctx.fillText('Backlink Atlas', X + 56, 132);
+
+  ctx.fillStyle = DIM;
+  ctx.font = '400 24px "Source Sans 3", sans-serif';
+  ctx.fillText(subtitle, X + 56, 176);
+
+  return { X, W, y: 176 };
+}
+
+/**
+ * The line along the bottom.
+ *
+ * It follows the content rather than sitting at a fixed height: a panel with
+ * nine rows in it is taller than one with four, and a caption drawn at a
+ * constant y lands on top of the last row. Clamped so it never leaves the card.
+ */
+function footnote(ctx, X, contentEnd, text) {
+  const y = Math.min(Math.max(contentEnd + 34, 740), 800);
+  ctx.fillStyle = FAINT;
+  ctx.font = '400 19px "Source Sans 3", sans-serif';
+  ctx.fillText(text, X + 56, y);
+}
+
+/** Lines the text will occupy at the current font, without drawing it. */
+function wrap(ctx, text, maxWidth) {
+  const words = String(text).split(/\s+/);
+  const lines = [];
+  let line = '';
+  for (const word of words) {
+    const next = line ? `${line} ${word}` : word;
+    if (ctx.measureText(next).width > maxWidth && line) { lines.push(line); line = word; }
+    else line = next;
+  }
+  if (line) lines.push(line);
+  return lines;
+}
+
+/** Titles that more than one page in the sample carries. */
+function duplicated(rows) {
+  const seen = new Map();
+  for (const row of rows) seen.set(row.title, (seen.get(row.title) ?? 0) + 1);
+  return seen;
+}
+
+/** 1 — what links here. */
+function drawBacklinks(ctx, view) {
+  const { X, W } = shell(ctx, `On the page "${view.page}", in space ${view.space}`);
+  let y = 244;
+
+  ctx.fillStyle = TEXT;
+  ctx.font = '600 30px "Source Sans 3", sans-serif';
+  ctx.fillText(`${view.rows.length} pages link here.`, X + 56, y);
+
+  y += 34;
+  const rows = view.rows.slice(0, 9);
+  const twice = duplicated(rows);
+
+  for (const row of rows) {
+    rounded(ctx, X + 56, y, W - 112, 46, 6);
+    ctx.fillStyle = SURFACE; ctx.fill();
+    ctx.strokeStyle = LINE; ctx.lineWidth = 1; ctx.stroke();
+
+    ctx.fillStyle = '#0C66E4';
+    ctx.font = '400 23px "Source Sans 3", sans-serif';
+    ctx.fillText(row.title, X + 84, y + 31);
+    let at = X + 84 + ctx.measureText(row.title).width + 18;
+
+    if (row.anchors.length) {
+      ctx.fillStyle = DIM;
+      ctx.font = '400 21px "Source Sans 3", sans-serif';
+      ctx.fillText(`→ ${row.anchors.join(', ')}`, at, y + 31);
+      at += ctx.measureText(`→ ${row.anchors.join(', ')}`).width + 18;
+    }
+    // Two different pages can carry one title. Saying so is the difference
+    // between a useful row and one that looks like a bug.
+    if (twice.get(row.title) > 1) {
+      ctx.fillStyle = FAINT;
+      ctx.font = '400 20px "Source Sans 3", sans-serif';
+      ctx.fillText('one of two pages with this title', at, y + 31);
+    }
+    y += 52;
+  }
+
+  ctx.fillStyle = DIM;
+  ctx.font = '400 22px "Source Sans 3", sans-serif';
+  ctx.fillText(`${view.withheld} more page links here, which you do not have access to.`, X + 56, y + 26);
+
+  footnote(ctx, X, y + 26,
+    'Confluence has no inbound-link call. This is the index the app keeps, filtered to what you may open.');
+}
+
+/** 2 — links that no longer land. */
+function drawHealth(ctx, view) {
+  const { X, W } = shell(ctx, `Link health for space ${view.space}`);
+  let y = 234;
+
+  ctx.fillStyle = DIM;
+  ctx.font = '400 23px "Source Sans 3", sans-serif';
+  ctx.fillText(
+    `${view.counts.pages} pages · ${view.counts.links} links · ${view.counts.problems} that no longer land`,
+    X + 56, y);
+
+  y += 32;
+  const REASON = 20;
+  const reasonWidth = W - 170;
+
+  for (const p of view.problems.slice(0, 5)) {
+    const tone = TONE[p.state];
+
+    // The box is sized to its reason. Truncating the sentence that explains a
+    // silent failure would defeat the screenshot.
+    ctx.font = `400 ${REASON}px "Source Sans 3", sans-serif`;
+    const lines = wrap(ctx, p.reason, reasonWidth).slice(0, 2);
+    const boxH = 60 + lines.length * 26;
+
+    rounded(ctx, X + 56, y, W - 112, boxH, 6);
+    ctx.fillStyle = tone.bg; ctx.fill();
+    ctx.fillStyle = tone.edge;
+    ctx.fillRect(X + 56, y, 5, boxH);
+
+    ctx.font = '600 17px "Source Sans 3", sans-serif';
+    const label = tone.label.toUpperCase();
+    const lw = ctx.measureText(label).width + 26;
+    rounded(ctx, X + 84, y + 14, lw, 30, 4);
+    ctx.fillStyle = PAPER; ctx.fill();
+    ctx.fillStyle = tone.ink;
+    ctx.fillText(label, X + 97, y + 35);
+
+    ctx.fillStyle = TEXT;
+    ctx.font = '600 22px "Source Sans 3", sans-serif';
+    ctx.fillText(`on "${p.source}"`, X + 96 + lw + 14, y + 35);
+
+    ctx.fillStyle = tone.ink;
+    ctx.font = `400 ${REASON}px "Source Sans 3", sans-serif`;
+    let ry = y + 66;
+    for (const line of lines) { ctx.fillText(line, X + 84, ry); ry += 26; }
+
+    y += boxH + 10;
+  }
+
+  footnote(ctx, X, y,
+    'A link to a renamed heading breaks with no error and no redirect. Nothing in Confluence reports it.');
+}
+
+/** 3 — pages nothing links to. */
+function drawOrphans(ctx, view) {
+  const { X, W } = shell(ctx, `Pages nothing links to, in space ${view.space}`);
+  let y = 240;
+
+  ctx.fillStyle = DIM;
+  ctx.font = '400 23px "Source Sans 3", sans-serif';
+  y = paragraph(ctx,
+    `${view.rows.length} of ${view.total} pages are reachable from the tree but from no page's text. `
+    + 'Normal for a space homepage. For anything else it usually means a reorganisation left them behind.',
+    X + 56, y, W - 160, 32);
+
+  y += 24;
+  const seen = duplicated(view.rows);
+
+  for (const row of view.rows.slice(0, 6)) {
+    rounded(ctx, X + 56, y, W - 112, 54, 6);
+    ctx.fillStyle = SURFACE; ctx.fill();
+    ctx.strokeStyle = LINE; ctx.lineWidth = 1; ctx.stroke();
+
+    ctx.fillStyle = TEXT;
+    ctx.font = '400 23px "Source Sans 3", sans-serif';
+    ctx.fillText(row.title, X + 84, y + 35);
+
+    ctx.fillStyle = FAINT;
+    ctx.font = '400 20px "Source Sans 3", sans-serif';
+    const note = seen.get(row.title) > 1
+      ? `version ${row.version} — one of two pages carrying this title`
+      : `version ${row.version}`;
+    ctx.fillText(note, X + W - 112 - ctx.measureText(note).width, y + 35);
+
+    y += 60;
+  }
+
+  footnote(ctx, X, y,
+    'Rebuilt nightly, and any page you edit is re-read at once. Every report says when the index was last built.');
+}
+
+/* --------------------------------- output -------------------------------- */
+
+function canvas(w, h) {
+  const c = document.createElement('canvas');
+  c.width = w; c.height = h;
+  document.getElementById('canvases').appendChild(c);
+  return c;
+}
+
+async function save(c, name) {
+  const blob = await new Promise((r) => c.toBlob(r, 'image/png'));
+  const res = await fetch(`/save?name=${name}`, { method: 'POST', body: blob });
+  return `${name.padEnd(18)} ${c.width}×${c.height}  ${(blob.size / 1024).toFixed(0)} KB  ${res.ok ? 'saved' : 'FAILED'}`;
+}
+
+(async () => {
+  const out = [];
+  await document.fonts.load('700 62px Archivo');
+  await document.fonts.load('400 24px "Source Sans 3"');
+  await document.fonts.ready;
+  out.push('fonts loaded');
+
+  const views = await (await fetch('/shots.json')).json();
+  const by = Object.fromEntries(views.map((v) => [v.id, v]));
+
+  const logo = canvas(144, 144);
+  drawLogo(logo.getContext('2d'));
+  out.push(await save(logo, 'logo.png'));
+
+  const banner = canvas(1120, 548);
+  drawWordmark(banner.getContext('2d'), {
+    w: 1120, h: 548, nameSize: 62, lineSize: 25, x: 84, nameY: 212,
+    lines: [
+      [['Confluence cannot tell you what', '#A3A9C4']],
+      [['links to a page. ', '#A3A9C4'], ['This can.', TRACE]],
+    ],
+    art: { x: 620, y: 274, reach: 380, spread: 120, width: 8, dot: 13 },
+  });
+  out.push(await save(banner, 'banner.png'));
+
+  const hero = canvas(960, 600);
+  drawWordmark(hero.getContext('2d'), {
+    w: 960, h: 600, nameSize: 54, lineSize: 23, x: 72, nameY: 168,
+    lines: [
+      [['Confluence cannot tell you', '#A3A9C4']],
+      [['what links to a page.', '#A3A9C4']],
+      [['This can.', TRACE]],
+    ],
+    art: { x: 92, y: 420, reach: 780, spread: 96, width: 7, dot: 11 },
+  });
+  out.push(await save(hero, 'hero.png'));
+
+  const shots = [
+    ['shot-1-backlinks.png', drawBacklinks, by.backlinks],
+    ['shot-2-health.png', drawHealth, by.health],
+    ['shot-3-orphans.png', drawOrphans, by.orphans],
+  ];
+  for (const [name, draw, view] of shots) {
+    const c = canvas(1840, 900);
+    draw(c.getContext('2d'), view);
+    out.push(await save(c, name));
+  }
+
+  document.getElementById('log').textContent = out.join('\n');
+})();
+</script>

@@ -1,0 +1,195 @@
+# Backlink Atlas — what links to this page, and which links no longer land.
+#
+# Confluence does not keep a reverse index. There is no "inbound links" call in
+# its REST API, which is why the request for one has been open since 2014. This
+# app builds that index itself: it reads page bodies, extracts the links, and
+# stores the edges — the ids, never the text.
+#
+# It runs entirely on Forge. Nothing leaves Atlassian: the manifest declares no
+# external permissions at all, so the platform would refuse an outbound call
+# even if the code attempted one.
+
+app:
+  id: ari:cloud:ecosystem::app/REPLACE-WITH-REGISTERED-ID
+  runtime:
+    name: nodejs22.x
+
+  # The graph. Two entities, because two questions are asked of it: "which page
+  # is this title?" and "who points at this page?"
+  storage:
+    entities:
+      # One row per page. Also the lookup that turns a link written as a title
+      # into the page it means.
+      - name: page
+        attributes:
+          spaceKey:
+            type: string
+          title:
+            type: string
+          titleFold:
+            type: string
+          version:
+            type: integer
+          inCount:
+            type: integer
+          outCount:
+            type: integer
+          brokenCount:
+            type: integer
+          indexedAt:
+            type: integer
+          # The page's headings, folded, so a link to one of them can be
+          # checked. Capped; past the cap the app says it cannot check rather
+          # than guessing.
+          anchors:
+            type: any
+          anchorsTruncated:
+            type: boolean
+        indexes:
+          # Every page in a space, in title order; also resolves title -> id.
+          - name: by-space-title
+            partition:
+              - spaceKey
+            range:
+              - titleFold
+          # Orphans are the pages in a space whose inCount is zero.
+          - name: by-space-incoming
+            partition:
+              - spaceKey
+            range:
+              - inCount
+
+      # One row per (page, distinct target). Deliberately one row per edge and
+      # not a list per page: a list would grow without bound on a hub page, and
+      # the reverse lookup is the whole point of the app.
+      - name: edge
+        attributes:
+          sourceId:
+            type: string
+          sourceSpace:
+            type: string
+          sourceTitle:
+            type: string
+          targetRef:
+            type: string
+          targetTitle:
+            type: string
+          targetSpace:
+            type: string
+          anchor:
+            type: string
+          kind:
+            type: string
+          state:
+            type: string
+          hits:
+            type: integer
+          seenAt:
+            type: integer
+        indexes:
+          # The reverse index. This one index is the product.
+          - name: by-target
+            partition:
+              - targetRef
+            range:
+              - sourceId
+          # Everything this page points at — needed to retract a page's edges
+          # when it is re-indexed or deleted.
+          - name: by-source
+            partition:
+              - sourceId
+          # The broken-links report for one space.
+          - name: by-space-state
+            partition:
+              - sourceSpace
+              - state
+            range:
+              - sourceId
+
+permissions:
+  scopes:
+    # Page bodies, to read the links out of them.
+    - read:page:confluence
+    # Space names and keys, to say which space a finding is in.
+    - read:space:confluence
+    # The graph.
+    - storage:app
+
+modules:
+  # "What links here", on the page itself. This is the 2014 request.
+  macro:
+    - key: backlinks-macro
+      resource: main
+      render: native
+      resolver:
+        function: resolver
+      title: Backlinks
+      description: Lists the pages that link to this one.
+
+  # The same count, always visible in the page byline, without editing the page.
+  confluence:contentBylineItem:
+    - key: backlinks-byline
+      resource: main
+      render: native
+      resolver:
+        function: resolver
+      title: Backlinks
+      dynamicProperties:
+        function: byline
+
+  # The link health of one space: what is broken, what is orphaned.
+  confluence:spacePage:
+    - key: backlinks-space
+      resource: main
+      render: native
+      resolver:
+        function: resolver
+      title: Link health
+
+  # Site-wide settings and the indexing status.
+  confluence:globalSettings:
+    - key: backlinks-settings
+      resource: main
+      render: native
+      resolver:
+        function: resolver
+      title: Backlink Atlas
+
+  # Keeping the index fresh without re-reading the whole site.
+  trigger:
+    - key: backlinks-page-events
+      function: onPageEvent
+      events:
+        - avi:confluence:created:page
+        - avi:confluence:updated:page
+        - avi:confluence:removed:page
+
+  # A full sweep is far longer than one invocation allows, so it is a chain of
+  # queued steps, each picking up at the cursor the last one left.
+  consumer:
+    - key: backlinks-crawl-queue
+      queue: crawl
+      resolver:
+        function: crawlStep
+        method: step
+
+  scheduledTrigger:
+    - key: backlinks-nightly
+      function: startSweep
+      interval: day
+
+  function:
+    - key: resolver
+      handler: index.handler
+    - key: byline
+      handler: index.byline
+    - key: onPageEvent
+      handler: index.onPageEvent
+    - key: startSweep
+      handler: index.startSweep
+    - key: crawlStep
+      handler: index.crawlStep
+
+resources:
+  - key: main
+    path: src/frontend/index.jsx

@@ -1,0 +1,4 @@
+node_modules/
+ТОКЕН.txt
+*.log
+.forge/

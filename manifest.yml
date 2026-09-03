@@ -10,7 +10,7 @@
 # even if the code attempted one.
 
 app:
-  id: ari:cloud:ecosystem::app/REPLACE-WITH-REGISTERED-ID
+  id: ari:cloud:ecosystem::app/00000000-0000-0000-0000-000000000000
   runtime:
     name: nodejs22.x
 

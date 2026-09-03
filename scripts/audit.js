@@ -253,7 +253,7 @@ export async function audit(over = {}) {
 
   /* ------------------------------ the manifest --------------------------- */
 
-  if (/REPLACE-WITH/.test(manifest)) {
+  if (/app\/0{8}-0{4}-0{4}-0{4}-0{12}/.test(manifest)) {
     report('manifest.placeholder-id', 'medium', 'manifest.yml',
       'The app id is still the placeholder. Run forge register before deploying.');
   }

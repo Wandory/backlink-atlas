@@ -16,7 +16,7 @@ import * as realResolve from '../src/resolve.js';
 
 const GOOD_MANIFEST = `
 app:
-  id: ari:cloud:ecosystem::app/real-one
+  id: ari:cloud:ecosystem::app/11111111-2222-3333-4444-555555555555
   storage:
     entities:
       - name: edge

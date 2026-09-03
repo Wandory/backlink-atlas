@@ -138,7 +138,7 @@ describe('permissions', () => {
 
 describe('things that must not ship', () => {
   test('the app id is a real one, not the placeholder', () => {
-    assert.ok(!/REPLACE-WITH/.test(manifest.app.id),
+    assert.ok(!/^ari:cloud:ecosystem::app\/0+-0+-0+-0+-0+$/.test(manifest.app.id),
       'manifest.yml still carries the placeholder app id — run forge register');
   });
 

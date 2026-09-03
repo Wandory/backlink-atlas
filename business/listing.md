@@ -17,7 +17,7 @@ The Marketplace "Publish a new app" form needs these before anything else:
 | Version | 2.0.0 (filled in automatically) |
 | Compatible Atlassian apps | **Confluence Cloud** |
 | App key | `io.github.wandory.backlinkatlas` |
-| App name | `Backlink Atlas` |
+| App name | `Backlink Atlas for Confluence` |
 
 Then **Save as private** rather than "Next: Make public" — the listing is filled
 in first and made public at the end, so nothing half-written is ever visible.
@@ -25,8 +25,14 @@ in first and made public at the end, so nothing half-written is ever visible.
 ## Name
 
 ```
-Backlink Atlas
+Backlink Atlas for Confluence
 ```
+
+Marketplace validates the name against its branding guidelines, which require
+the `<App Name> for <Product Name>` shape when a product is named. Carrying the
+product is also how the catalogue is searched: people look for "confluence
+backlinks", not for a brand they have never heard of. The app calls itself
+**Backlink Atlas** everywhere inside Confluence, where the product is obvious.
 
 ## Tagline (max 80)
 

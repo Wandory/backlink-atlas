@@ -184,16 +184,20 @@ async function loadSweep() {
 async function beginSweep() {
   const state = newSweep(Math.floor(Date.now() / 1000));
   await kvs.set(SWEEP, state);
-  // The push result is handed back to the caller. Forge's logs carry only
-  // errors for a deployed app, so a successful-but-inert queue is invisible
-  // there; the app has to say what happened itself.
-  let queued;
+  // Forge's logs carry only errors for a deployed app, so a queue that accepts
+  // an event and then does nothing is invisible there. The job id is kept so
+  // the settings page can ask the platform what became of it.
   try {
-    queued = await crawlQueue.push({ body: { reason: 'start' } });
+    const pushed = await crawlQueue.push({ body: { reason: 'start' } });
+    const jobId = pushed?.jobId ?? (Array.isArray(pushed) ? pushed[0]?.jobId : null);
+    const withJob = { ...state, jobId: jobId ?? '' };
+    await kvs.set(SWEEP, withJob);
+    return withJob;
   } catch (error) {
-    return { ...state, queueError: String(error?.message ?? error).slice(0, 200) };
+    const failed = { ...state, phase: 'failed', error: String(error?.message ?? error).slice(0, 200) };
+    await kvs.set(SWEEP, failed);
+    return failed;
   }
-  return { ...state, queued: queued ?? null };
 }
 
 /**
@@ -330,7 +334,28 @@ resolver.define('status', async ({ context }) => {
   // question is asked as the caller, which Forge gates behind a one-time
   // consent, and nobody should meet a consent screen for opening a page. The
   // gate lives on the button.
-  return { sweep: await loadSweep() };
+  const sweep = await loadSweep();
+
+  // What the platform says became of the queued work. A sweep that is "running"
+  // with nothing happening looks identical to one that is about to start, and
+  // this is the only thing that can tell them apart.
+  let job = '';
+  if (sweep.jobId && isRunning(sweep)) {
+    try {
+      const stats = await crawlQueue.getJob(sweep.jobId).getStats();
+      const counts = (await stats.json?.()) ?? stats;
+      if (counts?.failed > 0) {
+        job = `${counts.failed} steps of this sweep failed. What is below is incomplete.`;
+      } else if (counts?.inProgress > 0) {
+        job = 'A step is running now.';
+      }
+    } catch {
+      // Not being able to read the job's progress is not worth alarming anyone
+      // about; the sweep's own state already says whether it finished.
+      job = '';
+    }
+  }
+  return { sweep, job };
 });
 
 // Only these two cost the site something, so only these two are gated.

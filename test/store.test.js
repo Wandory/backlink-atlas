@@ -1,6 +1,6 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { drain, chunk } from '../src/store.js';
+import { drain, chunk, byKey } from '../src/store.js';
 
 /*
  * The two pieces of src/store.js that are logic rather than plumbing.
@@ -121,5 +121,41 @@ describe('batching', () => {
 
   test('a list that fits exactly makes one batch', () => {
     assert.equal(chunk(Array.from({ length: 25 }, (_, i) => i)).length, 1);
+  });
+});
+
+describe('reading a batch back', () => {
+  test('it reads the field batchGet actually answers with', () => {
+    // The real shape. Reading `results` instead — which most of the other APIs
+    // here use — yields an empty map, no error, and writes that never happen.
+    const map = byKey({
+      successfulKeys: [
+        { key: '1', entityName: 'page', value: { title: 'A', inCount: 2 } },
+        { key: '2', entityName: 'page', value: { title: 'B', inCount: 0 } },
+      ],
+      failedKeys: [],
+    });
+    assert.equal(map.size, 2);
+    assert.equal(map.get('1').title, 'A');
+    assert.equal(map.get('2').inCount, 0);
+  });
+
+  test('a key that could not be read is simply absent, not undefined-valued', () => {
+    const map = byKey({ successfulKeys: [], failedKeys: [{ key: '9', error: 'nope' }] });
+    assert.equal(map.size, 0);
+    assert.equal(map.has('9'), false);
+  });
+
+  test('an answer in the wrong shape yields nothing rather than throwing', () => {
+    // If the platform ever changes the field, this must stay a safe empty
+    // rather than a crash in the middle of a sweep.
+    assert.equal(byKey({ results: [{ key: '1', value: {} }] }).size, 0);
+    assert.equal(byKey(undefined).size, 0);
+    assert.equal(byKey(null).size, 0);
+  });
+
+  test('numeric keys come back as strings, so lookups match', () => {
+    const map = byKey({ successfulKeys: [{ key: 524289, value: { title: 'X' } }] });
+    assert.equal(map.get('524289').title, 'X');
   });
 });

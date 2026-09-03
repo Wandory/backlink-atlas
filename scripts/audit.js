@@ -444,7 +444,7 @@ async function behavioural(report, over) {
   const PAGE_FIELDS = new Set(['spaceKey', 'title', 'titleFold', 'version',
     'inCount', 'outCount', 'brokenCount', 'indexedAt', 'anchors', 'anchorsTruncated']);
   const EDGE_FIELDS = new Set(['sourceId', 'sourceSpace', 'sourceTitle', 'slot', 'targetRef',
-    'targetTitle', 'targetSpace', 'anchor', 'kind', 'state', 'hits', 'seenAt']);
+    'targetTitle', 'targetSpace', 'anchor', 'kind', 'state', 'reason', 'hits', 'seenAt']);
 
   const SECRET = 'THE-BODY-TEXT-OF-THE-PAGE';
   const builtPage = graph.pageRow({

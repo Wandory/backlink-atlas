@@ -74,6 +74,12 @@ app:
             type: string
           state:
             type: string
+          # Why the link is in that state, in the words the report shows. An
+          # attribute the entity does not declare is refused on write, and the
+          # refusal is only visible if the batch result is read — which is how
+          # this one hid: every verdict was silently dropped.
+          reason:
+            type: string
           hits:
             type: integer
           seenAt:

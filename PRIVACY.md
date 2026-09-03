@@ -52,8 +52,8 @@ app reports that it cannot check that page's anchors, rather than storing more.
 **For each link:** the id, title and space of the page it is on, a short hash
 that tells this link apart from the others on the same page, a reference to
 what it points at, the target's title and space as the link named them, the
-heading it points at if any, what kind of link it is, whether it lands, how
-many times it appears, and when it was last seen.
+heading it points at if any, what kind of link it is, whether it lands and the
+sentence explaining why, how many times it appears, and when it was last seen.
 
 **Page and link text is not stored.** The repository's security audit enforces
 this: it builds a page record from a page whose every field is filled with

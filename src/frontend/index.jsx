@@ -265,6 +265,7 @@ function Settings() {
         <Text>Pages indexed: {sweep.pages ?? 0}</Text>
         <Text>Links recorded: {sweep.edges ?? 0}</Text>
         <Text>Links that do not land: {sweep.problems ?? 0}</Text>
+        {data?.job && <Text>{data.job}</Text>}
       </Stack>
 
       <Inline space="space.100" alignBlock="center">

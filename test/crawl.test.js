@@ -116,9 +116,12 @@ function harness(site = SITE, { pageSize = 2 } = {}) {
     },
 
     async saveEdgeStates(updates) {
+      // Whole rows, as the real store now takes them. An update that arrives as
+      // a patch would be a contract change, and this is where it shows.
       for (const u of updates) {
-        const row = edges.get(u.key);
-        if (row) edges.set(u.key, { ...row, state: u.state, reason: u.reason });
+        assert.ok(u.row && typeof u.row === 'object', 'an update must carry a whole row');
+        assert.ok(!('key' in u.row), 'the storage key must not be stored as an attribute');
+        edges.set(u.key, { ...u.row, key: u.key });
       }
     },
 

@@ -158,7 +158,13 @@ export async function resolvePageEdges(pageId, lookup, deps) {
     const verdict = resolveEdge(edge, view, { sourcePage });
 
     if (verdict.state !== edge.state) {
-      updates.push({ key: edge.key, state: verdict.state, reason: verdict.reason });
+      // The whole row, not a patch: it is already in hand, and reading it back
+      // to change one field is a round trip that can fail on its own.
+      const { key, ...value } = edge;
+      updates.push({
+        key,
+        row: { ...value, state: verdict.state, ...(verdict.reason ? { reason: verdict.reason } : {}) },
+      });
     }
     // A page does not count as linking to itself.
     if (verdict.targetId && String(verdict.targetId) !== String(pageId)) {

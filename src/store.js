@@ -30,6 +30,40 @@ export const chunk = (list, size = BATCH) => {
 };
 
 /**
+ * A batch write either worked or it did not, and the difference is only in the
+ * result.
+ *
+ * `batchSet` reports per-key failures rather than throwing. Ignoring that is how
+ * an entire phase of the sweep wrote nothing at all while every log stayed
+ * silent and every counter looked plausible — an attribute the entity had not
+ * declared was refused, key by key, and nobody asked.
+ */
+export function checkBatch(result, what) {
+  const failed = result?.failedKeys ?? [];
+  if (failed.length === 0) return result;
+  // The failure carries a nested object; printing it plainly gives
+  // "[object Object]", which is a message that helps nobody.
+  const first = JSON.stringify(failed[0] ?? {}, (k, v) => (v instanceof Error ? String(v) : v));
+  throw new Error(
+    `${what}: storage refused ${failed.length} of them — ${String(first).slice(0, 400)}`,
+  );
+}
+
+/**
+ * A batch read, turned into a lookup by key.
+ *
+ * `batchGet` answers with `{ successfulKeys, failedKeys }`, not the `{ results }`
+ * that most of the other APIs here use. Reading the wrong field yields an empty
+ * map and no error at all — the writes that follow simply never happen, and the
+ * only symptom is a report that stays empty forever. Exported so the shape is
+ * pinned by a test rather than by memory.
+ */
+export function byKey(batch) {
+  const rows = batch?.successfulKeys ?? [];
+  return new Map(rows.map((row) => [String(row.key), row.value]));
+}
+
+/**
  * Drain a query, page by page, up to a ceiling.
  *
  * Returns the rows and whether there were more than the ceiling allowed. The
@@ -122,10 +156,7 @@ export async function setPageProblems(id, brokenCount) {
 export async function addIncoming(entries) {
   for (const group of chunk(entries)) {
     const keys = group.map(([id]) => ({ entityName: PAGE, key: String(id) }));
-    const got = await kvs.batchGet(keys);
-    const current = new Map(
-      (got?.results ?? []).map((r) => [String(r.key), r.value]),
-    );
+    const current = byKey(await kvs.batchGet(keys));
 
     const writes = [];
     for (const [id, n] of group) {
@@ -137,7 +168,7 @@ export async function addIncoming(entries) {
         value: { ...row, inCount: (row.inCount ?? 0) + n },
       });
     }
-    if (writes.length) await kvs.batchSet(writes);
+    if (writes.length) checkBatch(await kvs.batchSet(writes), 'counting incoming links');
   }
 }
 
@@ -169,29 +200,23 @@ export async function replaceEdges(sourceId, rows) {
   }
 
   for (const group of chunk(rows)) {
-    await kvs.batchSet(group.map(({ key, row }) => ({
+    checkBatch(await kvs.batchSet(group.map(({ key, row }) => ({
       entityName: EDGE, key, value: row,
-    })));
+    }))), 'writing edges');
   }
 }
 
-/** Write the verdicts the resolve phase reached. */
+/**
+ * Write the verdicts the resolve phase reached.
+ *
+ * The caller hands over complete rows, so there is no read-back: one fewer
+ * round trip, and one fewer place for a batch to come home empty.
+ */
 export async function saveEdgeStates(updates) {
   for (const group of chunk(updates)) {
-    const got = await kvs.batchGet(group.map((u) => ({ entityName: EDGE, key: u.key })));
-    const current = new Map((got?.results ?? []).map((r) => [String(r.key), r.value]));
-
-    const writes = [];
-    for (const u of group) {
-      const row = current.get(String(u.key));
-      if (!row) continue;
-      writes.push({
-        entityName: EDGE,
-        key: u.key,
-        value: { ...row, state: u.state, ...(u.reason ? { reason: u.reason } : {}) },
-      });
-    }
-    if (writes.length) await kvs.batchSet(writes);
+    checkBatch(await kvs.batchSet(group.map(({ key, row }) => ({
+      entityName: EDGE, key, value: row,
+    }))), 'saving edge states');
   }
 }
 

@@ -1,5 +1,9 @@
 @echo off
-rem This file stays ASCII on purpose. All the Russian lives in the
-rem PowerShell script, which cmd.exe never has to parse.
+rem ASCII only. cmd.exe re-reads a batch file with whatever codepage is
+rem active as it reaches each line, so Cyrillic inside one gets shredded.
 chcp 65001 >nul
-powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0scriptsegister.ps1"
+cd /d "%~dp0"
+powershell -NoProfile -ExecutionPolicy Bypass -File "scripts\register.ps1"
+echo.
+echo [exit code %ERRORLEVEL%]
+pause

@@ -3,13 +3,19 @@
 ## Install it
 
 From the Atlassian Marketplace, on any Confluence Cloud site you administer.
-It asks for three permissions, and none of them lets it change anything:
+It asks for five permissions, and not one of them lets it change anything:
 
 | | |
 |---|---|
 | `read:page:confluence` | Page text. This is what carries the links. |
 | `read:space:confluence` | Space keys, so a finding can say which space it is in. |
+| `read:content.permission:confluence` | Whether you may read a page, asked before it is shown to you. |
+| `read:confluence-user` | Whether you administer this site, asked when you press "rebuild". |
 | `storage:app` | The index, held inside your Atlassian environment. |
+
+The first time you press **Rebuild the index now**, Confluence asks you to let
+the app confirm who you are. That is the only consent anyone is ever asked for,
+and only administrators meet it — reading a report never prompts anybody.
 
 ## Build the index
 

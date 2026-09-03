@@ -21,7 +21,7 @@ cause.
 
 | | |
 |---|---|
-| **Permissions** | `read:page:confluence`, `read:space:confluence`, `storage:app`. Nothing else. |
+| **Permissions** | `read:page:confluence`, `read:space:confluence`, `read:content.permission:confluence`, `read:confluence-user`, `storage:app`. Nothing else, and not one of them writes. |
 | **Writes to Confluence** | none, ever. No scope that writes is requested, so the platform would refuse. |
 | **Network egress** | none. The manifest declares no external permissions, so the platform will not let it call out even if the code tried. |
 | **Credentials held** | none. No token, no webhook secret, no password, nothing to steal. |

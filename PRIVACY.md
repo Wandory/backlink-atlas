@@ -28,7 +28,13 @@ Forge platform would refuse an outbound call even if the code attempted one.
 |---|---|
 | `read:page:confluence` | Page content, in Confluence's storage format. This is what carries the links. |
 | `read:space:confluence` | Space keys and names, so a finding can say which space it is in. Confluence's page API names a space only by a numeric id. |
+| `read:content.permission:confluence` | Whether a given person may read a given page. Asked of Confluence before any row is shown to anyone. Nothing is read about the page or the person beyond yes or no. |
+| `read:confluence-user` | Whether the person pressing "rebuild the index" administers this site. Asked about that person only, at the moment they press it, and never stored. |
 | `storage:app` | The index, held in Forge storage inside your Atlassian environment. |
+
+The two permission scopes are there to take things away, not to gather them:
+without the first, the app could not tell whether you are allowed to see a
+result, and would have to either show you everything or nothing.
 
 It asks for nothing else. In particular it does not ask for
 `read:attachment:confluence`, which is why links to attachments are listed as

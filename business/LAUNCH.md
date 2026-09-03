@@ -14,23 +14,41 @@ what to click.
 
 | | |
 |---|---|
-| Code | done — 158 tests, 157 green |
-| Security audit | done — no high findings |
+| Code | done — 173 tests, all green |
+| Security audit | done — no findings at all |
 | Documentation, privacy policy, terms, security policy | done |
 | Listing text, logo, banner, hero, three screenshots | done |
 | Niche and competitor analysis | done — `business/NICHE.md` |
-| App registered with Atlassian | **you** |
-| Deployed and installed on a site | **you**, then me |
-| Tested against a real Confluence | **you**, then me |
-| Submitted to the Marketplace | **you**, then me |
+| App registered with Atlassian | done — `2beb7dcf-6bc6-4c40-8861-f5df230cf96c` |
+| Deployed and installed on a live site | done — development environment |
+| Tested against a real Confluence | **done, and it found the thing it was built to find** |
+| Released to production | next |
+| Submitted to the Marketplace | **you** for the agreement and the submit button, me for the rest |
 
-The one failing test is deliberate. `manifest.yml` still carries a placeholder
-app id, and a test fails until it is replaced. It goes green the moment the app
-is registered, which is the first step below.
+### What the live site proved
+
+A space with four linked pages, one link to a deleted page, one link to a
+heading that had been renamed, and one page nothing points at. The app,
+unprompted:
+
+```
+Links that no longer land (2)
+  Points at a page that is not there — New Starter Checklist
+    No page called "Laptop Setup" in OPS. It was renamed, moved or deleted.
+  Points at a heading that is gone — New Starter Checklist
+    "Deploy Runbook" exists, but has no heading called "Emergency rollback"
+    any more. The link still opens the page and drops the reader at the top.
+
+2 pages link here.
+  New Starter Checklist → Emergency rollback
+  On-call Rotation → Rolling back
+```
+
+The second finding is the one nothing else in Confluence reports.
 
 ---
 
-## 1. Register the app — **you**
+## 1. Register the app — done
 
 Double-click **ЗАПУСК.cmd** in the project folder.
 
@@ -49,17 +67,24 @@ is shown to me, and a token that has been pasted anywhere should be revoked.
 
 The launcher then does the rest: installs the Forge CLI, logs in, registers the
 app, deploys it, and installs it on your Confluence. It asks you to confirm the
-three permissions. All three are read-only as far as Confluence is concerned:
+five permissions. Every one of them is read-only as far as Confluence is
+concerned, and two of them exist so the app can withhold results:
 
 ```
-read:page:confluence     page text, which is what carries the links
-read:space:confluence    space keys, so a finding can name its space
-storage:app              the index
+read:page:confluence                  page text, which carries the links
+read:space:confluence                 space keys, so a finding can name its space
+read:content.permission:confluence    may this person read this page?
+read:confluence-user                  do you administer this site?
+storage:app                           the index
 ```
+
+The two permission scopes are what let the app *withhold* results. Without the
+first it could not tell whether you may see a row, and would have to show
+everything or nothing.
 
 When it finishes, tell me. I take it from there.
 
-## 2. First index — me, once it is installed
+## 2. First index — done
 
 In Confluence: **Settings → Apps → Backlink Atlas → Rebuild the index now**.
 
@@ -67,27 +92,21 @@ The first build reads every page on the site. Minutes on a small site, longer
 on a large one. It runs as a chain of background steps, so the page can be
 closed.
 
-## 3. Check it against reality — me
+## 3. Check it against reality — done
 
-This is the step that matters most, and it is the one that caught a fatal
-mistake in the last product. The plan:
+This was the step that mattered most, and it earned its place: it found five
+defects the test suite could not, two of which failed in complete silence and
+would have shipped a product that reported "no broken links" on a site full of
+them. They are described in the commit history.
 
-- Create a page, link to it from two others, and confirm the backlink count
-  says two.
-- Rename a heading that something links to, and confirm the app reports the
-  anchor as gone — this is the differentiating feature and it must be right.
-- Delete a page and confirm the links to it are reported as missing.
-- Confirm a page you have no permission to see is counted as withheld and not
-  named.
+Still to check before submission: that a page the reader may not open is
+counted as withheld rather than named. It needs a second account with narrower
+permissions.
 
-Anything the app gets wrong here gets fixed before submission. A report that
-cries wolf is worse than no report.
+## 4. Publish the source — done
 
-## 4. Publish the source — me
-
-A public repository at `github.com/Wandory/backlink-atlas`, Apache 2.0. The
-listing links to it for documentation, support, privacy policy and terms, so it
-has to exist before the listing is submitted.
+`github.com/Wandory/backlink-atlas`, Apache 2.0, public. The listing links to
+it for documentation, support, privacy policy and terms.
 
 ## 5. The Marketplace listing — **you** for the account parts, me for the rest
 
@@ -123,9 +142,9 @@ plainly.
 **Attachments are not checked**, because the app does not ask for permission to
 read them.
 
-**A rename is not caught instantly.** Editing a page updates that page at once.
-Renaming a page can break links on other pages, and those are found by the
-nightly sweep. Every report says when the index was last rebuilt.
+**A rename is not caught instantly.** An hourly pass re-reads whatever changed.
+Renaming a page can break links on other pages nobody touched, and those are
+found by the nightly sweep. Every report says when the index was last rebuilt.
 
 ## What would make it paid, later
 

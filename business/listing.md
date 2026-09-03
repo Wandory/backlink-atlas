@@ -98,7 +98,11 @@ It does not write to Confluence. No scope in its manifest would allow it.
 
 - read:page:confluence — page bodies. This is what carries the links.
 - read:space:confluence — space keys, so a finding can say which space it is in. Confluence's page API names a space only by a numeric id.
+- read:content.permission:confluence — whether a given person may read a given page. Asked of Confluence before any result is shown, which is what stops anyone seeing a page they cannot open.
+- read:confluence-user — whether the person pressing "rebuild the index" administers the site. Asked about them, at that moment, and never stored.
 - storage:app — the index, held in Forge storage inside your Atlassian environment.
+
+Two of those five exist to withhold things rather than to gather them. Not one of them can change anything.
 
 ### Privacy
 

@@ -137,10 +137,8 @@ function harness(site) {
       return [...edges.values()].filter((e) => e.sourceId === String(sourceId));
     },
     async saveEdgeStates(updates) {
-      for (const u of updates) {
-        const row = edges.get(u.key);
-        if (row) edges.set(u.key, { ...row, state: u.state, reason: u.reason });
-      }
+      // Whole rows, as the real store takes them.
+      for (const u of updates) edges.set(u.key, { ...u.row, key: u.key });
     },
     async setPageProblems(id, n) {
       const row = pages.get(String(id));

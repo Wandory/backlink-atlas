@@ -41,13 +41,20 @@ the graph: this page links to that page, at that heading, and whether it lands.
 The full list of stored fields, and the audit check that keeps that list
 honest, is in [PRIVACY.md](PRIVACY.md).
 
-Three scopes, all of them read-only:
+Five scopes. Not one of them can change anything:
 
 ```yaml
-- read:page:confluence     # page bodies, which carry the links
-- read:space:confluence    # space keys, so a finding can name its space
-- storage:app              # the index
+- read:page:confluence               # page bodies, which carry the links
+- read:space:confluence              # space keys, so a finding can name its space
+- read:content.permission:confluence # may this person read this page?
+- read:confluence-user               # do you administer this site?
+- storage:app                        # the index
 ```
+
+The two permission scopes exist to *withhold* things. The first is asked of
+Confluence about every page before it appears in a report, which is what stops
+anyone being shown a page they cannot open. The second is asked only when
+someone presses "rebuild the index", and about nobody but them.
 
 ## Who sees what
 

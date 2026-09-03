@@ -17,6 +17,16 @@ const source = Object.fromEntries(
 );
 const allSource = Object.values(source).join('\n');
 
+/**
+ * The source with its prose stripped out.
+ *
+ * A check about what the code *does* must not be satisfied or broken by a
+ * comment explaining what it deliberately does not do.
+ */
+const codeOnly = allSource
+  .replace(/\/\*[\s\S]*?\*\//g, ' ')
+  .replace(/(^|[^:])\/\/[^\n]*/g, '$1 ');
+
 describe('the functions the manifest promises', () => {
   const declared = manifest.modules.function;
 
@@ -49,6 +59,43 @@ describe('the functions the manifest promises', () => {
     const [consumer] = manifest.modules.consumer;
     assert.match(source.index, new RegExp(`new Queue\\(\\{\\s*key:\\s*'${consumer.queue}'`),
       `no queue called "${consumer.queue}" is created in src/index.js`);
+  });
+
+  test('the consumer is declared the way the installed @forge/events expects', () => {
+    // The deprecated `resolver:` form still validates, and then simply never
+    // fires: the sweep starts, the queue accepts the event, and nothing ever
+    // runs. Nothing anywhere says so. This is what noticed it.
+    const major = Number(
+      JSON.parse(fs.readFileSync('package.json', 'utf8'))
+        .dependencies['@forge/events'].split('.')[0],
+    );
+    const [consumer] = manifest.modules.consumer;
+
+    if (major >= 2) {
+      assert.ok(consumer.function,
+        '@forge/events v2 names the handler with `function:`; `resolver:` never fires');
+      assert.equal(consumer.resolver, undefined,
+        'the v1 `resolver:` form is present alongside v2, which will not fire');
+    } else {
+      assert.ok(consumer.resolver?.method, '@forge/events v1 needs resolver.method');
+    }
+  });
+
+  test('every queued event is wrapped in a body, as the platform requires', () => {
+    // Pushing the payload bare throws InvalidPayloadError at runtime and
+    // nowhere else — the sweep simply never starts, and the button sits on
+    // "Starting" forever.
+    // Only the queue's own pushes: an array's push is a different thing that
+    // happens to share a name.
+    const queue = /const\s+(\w+)\s*=\s*new Queue\(/.exec(source.index);
+    assert.ok(queue, 'no queue is created in src/index.js');
+    const pushes = [...source.index.matchAll(
+      new RegExp(`${queue[1]}\\.push\\(([^;]*?)\\)\\s*;`, 'gs'),
+    )].map((m) => m[1]);
+    assert.ok(pushes.length > 0, 'expected the code to queue something');
+    for (const arg of pushes) {
+      assert.match(arg, /\bbody\s*:/, `queue push is missing a body: ${arg.trim().slice(0, 60)}`);
+    }
   });
 });
 
@@ -119,9 +166,49 @@ describe('permissions', () => {
     }
   });
 
-  test('the scopes are exactly the three the app uses', () => {
-    assert.deepEqual([...scopes].sort(),
-      ['read:page:confluence', 'read:space:confluence', 'storage:app']);
+  test('the scopes are exactly the five the app uses, all of them reads', () => {
+    assert.deepEqual([...scopes].sort(), [
+      'read:confluence-user',
+      'read:content.permission:confluence',
+      'read:page:confluence',
+      'read:space:confluence',
+      'storage:app',
+    ]);
+  });
+
+  test('the user scope is used only to answer the administrator question', () => {
+    // If it is ever used for anything else, the reason given in the manifest
+    // and the listing stops being true.
+    const uses = [...allSource.matchAll(/rest\/api\/user/g)].length;
+    assert.equal(uses, 1, `the user endpoint is called in ${uses} places, expected 1`);
+    assert.match(source.authz, /administer/);
+  });
+
+  test('nobody is asked to consent just to read a report', () => {
+    // asUser() makes Forge ask that person for consent the first time. It earns
+    // its place in exactly one spot — the administrator gate on the rebuild
+    // button — because Confluence will not tell an app what someone else may
+    // do. Anywhere on a read path it would put a consent screen in front of an
+    // ordinary reader on an ordinary page.
+    const strip = (text) => text
+      .replace(/\/\*[\s\S]*?\*\//g, ' ')
+      .replace(/(^|[^:])\/\/[^\n]*/g, '$1 ');
+
+    const inAuthz = [...strip(source.authz).matchAll(/asUser\s*\(/g)].length;
+    assert.equal(inAuthz, 1, `src/authz.js uses asUser ${inAuthz} times, expected once`);
+
+    for (const [name, text] of Object.entries(source)) {
+      if (name === 'authz') continue;
+      assert.ok(!/asUser\s*\(/.test(strip(text)),
+        `src/${name}.js acts as the caller; only the administrator gate may do that`);
+    }
+  });
+
+  test('the administrator gate is the only thing that consent protects', () => {
+    // If asUser ever moved into the reports, the sentence above would still
+    // pass while the product quietly changed. This pins what it guards.
+    assert.match(source.authz, /checkSiteAdmin/);
+    assert.match(source.index, /requireAdmin\(checkSiteAdmin/);
   });
 
   test('no external permissions are declared, so nothing can be sent anywhere', () => {

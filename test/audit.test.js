@@ -229,20 +229,29 @@ describe('the interface', () => {
 describe('the behavioural half', () => {
   test('a permission check that says yes when the call fails is caught', async () => {
     const result = await run(clean(), {
-      authz: { ...realAuthz, visiblePages: async () => new Map([['1', {}]]) },
+      authz: {
+        ...realAuthz,
+        readablePages: async (ids) => ({ allowed: new Set(ids.map(String)), capped: false }),
+      },
     });
     const f = result.findings.find((x) => x.id === 'authz.failure-is-permission');
     assert.ok(f, ids(result).join());
     assert.equal(f.severity, 'high');
   });
 
-  test('a filter that lets an unseen row through is caught', async () => {
+  test('showing rows to a caller who could not be identified is caught', async () => {
     const result = await run(clean(), {
       authz: {
         ...realAuthz,
-        visiblePages: async () => new Map(),
-        filterBySource: async (rows) => ({ rows, withheld: 0 }),
+        readablePages: async (ids) => ({ allowed: new Set(ids.map(String)), capped: false }),
       },
+    });
+    assert.ok(ids(result).includes('authz.anonymous-passes'), ids(result).join());
+  });
+
+  test('a filter that lets an unseen row through is caught', async () => {
+    const result = await run(clean(), {
+      authz: { ...realAuthz, filterBySource: async (rows) => ({ rows, withheld: 0 }) },
     });
     assert.ok(ids(result).includes('authz.filter-passes-unseen'), ids(result).join());
   });

@@ -102,6 +102,21 @@ permissions:
     - read:page:confluence
     # Space names and keys, to say which space a finding is in.
     - read:space:confluence
+    # Whether a given person may read a given page. This is what stops the
+    # reports showing anyone a page they are not allowed to open. Asked of
+    # Confluence with the app's own authority, so nobody is prompted for
+    # consent merely to look at a page.
+    - read:content.permission:confluence
+    # Whether the caller administers this Confluence. Asked only when someone
+    # presses "rebuild the index", never on page load. Nothing is read about
+    # anyone else, and nothing about anyone is stored.
+    #
+    # This one is a classic scope rather than a granular one because the
+    # endpoint that answers it is a v1 endpoint, and the granular
+    # read:user:confluence does not cover it — the app's requests went out with
+    # no token at all, which Confluence answered 401 and the platform reported
+    # as a missing consent. The linter names the required scope exactly.
+    - read:confluence-user
     # The graph.
     - storage:app
 
@@ -153,9 +168,10 @@ modules:
   consumer:
     - key: backlinks-crawl-queue
       queue: crawl
-      resolver:
-        function: crawlStep
-        method: step
+      # @forge/events v2 names the handler directly. The older `resolver:` form
+      # is still accepted by the manifest validator but silently never fires,
+      # which looks exactly like a sweep that starts and then does nothing.
+      function: crawlStep
 
   scheduledTrigger:
     # The whole site, once a night. This is what finds links broken by a page

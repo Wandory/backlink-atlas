@@ -117,11 +117,11 @@ export async function audit(over = {}) {
         `${fn} was not found, so the auditor cannot confirm it filters by permission.`);
       continue;
     }
-    if (!/filterBySource|visiblePages/.test(body)) {
+    if (!/filterBySource|readablePages/.test(body)) {
       report('authz.leak-backlinks', 'high', 'src/index.js',
         `${fn} returns rows read with the app's permissions without asking whether the caller may see them.`, {
           why: 'The index knows every page on the site. Returning a row names a page, and naming a page the reader cannot open is the leak.',
-          fix: 'Pass the rows through filterBySource, or the ids through visiblePages, before returning them.',
+          fix: 'Pass the rows through filterBySource, or the ids through readablePages, before returning them.',
         });
     }
   }
@@ -137,6 +137,18 @@ export async function audit(over = {}) {
   }
 
   /* ------------------------ authorising the caller ----------------------- */
+
+  // Who is asking must be the platform's word, never the caller's. A resolver
+  // that reads an account id out of the payload lets anyone name an
+  // administrator's account and walk straight through the gate.
+  for (const hit of hits(index, /accountId\s*:\s*payload|payload[?.\]]*\.?accountId/)) {
+    report('authz.identity-from-payload', 'high', `src/index.js:${hit.line}`,
+      'The account being authorised is taken from the payload the caller sent.', {
+        why: 'A caller who names the account being checked can name an administrator and pass the check.',
+        fix: 'Take it from context.accountId, which the platform supplies.',
+        evidence: hit.text.slice(0, 120),
+      });
+  }
 
   const guarded = /requireAdmin\s*\(/;
   for (const name of ['runSweep', 'stopSweep']) {
@@ -348,48 +360,54 @@ async function behavioural(report, over) {
   const graph = over.graph ?? await import('../src/graph.js');
   const resolve = over.resolve ?? await import('../src/resolve.js');
 
-  // A failed permission call must hide rows, not show them.
-  const failing = async () => { throw new Error('network'); };
-  const onFailure = await authz.visiblePages(['1', '2'], { request: failing });
-  if (onFailure.size !== 0) {
+  // A failed permission check must hide the row, not show it.
+  const throwing = async () => { throw new Error('network'); };
+  const onFailure = await authz.readablePages(['1', '2'], { accountId: 'a', check: throwing });
+  if (onFailure.allowed.size !== 0) {
     report('authz.failure-is-permission', 'high', 'src/authz.js',
-      'When the permission call fails, pages are treated as visible.', {
+      'When the permission check fails, pages are treated as readable.', {
         why: 'A failure to answer is not permission.',
       });
   }
 
-  // So must a refusal.
-  const refusing = async () => ({ ok: false, status: 403, json: async () => ({}) });
-  const onRefusal = await authz.visiblePages(['1'], { request: refusing });
-  if (onRefusal.size !== 0) {
+  // So must a plain "no".
+  const refusing = async () => false;
+  const onRefusal = await authz.readablePages(['1'], { accountId: 'a', check: refusing });
+  if (onRefusal.allowed.size !== 0) {
     report('authz.refusal-ignored', 'high', 'src/authz.js',
       'A refusal from Confluence does not hide the page.');
   }
 
-  // Only what Confluence actually returned may be shown.
-  const partial = async () => ({
-    ok: true, status: 200,
-    json: async () => ({ results: [{ id: '1', title: 'Visible' }] }),
-  });
+  // Only what Confluence said yes to may be shown, and the rest must be counted.
+  const only1 = async (id) => String(id) === '1';
   const filtered = await authz.filterBySource(
-    [{ sourceId: '1' }, { sourceId: '2' }], { request: partial },
+    [{ sourceId: '1' }, { sourceId: '2' }], { accountId: 'a', check: only1 },
   );
   if (filtered.rows.length !== 1 || filtered.withheld !== 1) {
     report('authz.filter-passes-unseen', 'high', 'src/authz.js',
-      'A row whose source Confluence did not return survives the filter.', {
+      'A row whose source Confluence did not allow survives the filter.', {
         evidence: JSON.stringify(filtered).slice(0, 160),
       });
   }
 
-  // An id that is not an id must never reach the URL.
-  const sent = [];
-  const spy = async (url) => { sent.push(String(url)); return { ok: true, json: async () => ({ results: [] }) }; };
-  await authz.visiblePages(['1', '2&limit=9999', '../../admin', "1' OR '1"], { request: spy });
-  const joined = sent.join(' ');
-  if (/limit=9999|\.\.|OR/.test(joined)) {
+  // With nobody asking, nothing is readable. An empty account id must not mean
+  // "skip the check".
+  const anonymous = await authz.readablePages(['1'], { check: async () => true });
+  if (anonymous.allowed.size !== 0) {
+    report('authz.anonymous-passes', 'high', 'src/authz.js',
+      'Rows are shown when the caller could not be identified.');
+  }
+
+  // An id that is not an id must never reach the permission API.
+  const asked = [];
+  await authz.readablePages(['1', '2 OR 1=1', '../../admin', 'x'], {
+    accountId: 'a',
+    check: async (id) => { asked.push(String(id)); return true; },
+  });
+  if (asked.some((id) => !/^\d+$/.test(id))) {
     report('injection.page-ids', 'high', 'src/authz.js',
-      'A caller-supplied value reaches the request URL unfiltered.', {
-        evidence: joined.slice(0, 200),
+      'A caller-supplied value reaches the permission check unfiltered.', {
+        evidence: asked.join(' '),
       });
   }
 

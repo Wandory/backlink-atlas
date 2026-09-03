@@ -6,65 +6,124 @@
  * someone "this page is linked from HR/Terminations" tells them a page called
  * HR/Terminations exists, and that alone can be the leak.
  *
- * So nothing read out of the index is ever shown until Confluence itself has
- * confirmed, as the person asking, that they may see it. The app does not model
+ * So nothing read out of the index is shown until Confluence itself has
+ * confirmed that this particular person may see it. The app does not model
  * Confluence's permissions — space permissions, page restrictions, inherited
  * restrictions, anonymous access — it asks Confluence and believes the answer.
  *
  * The rule, when the answer does not come: a failure to answer is not
  * permission. An error hides the row.
+ *
+ * Two different mechanisms are used, for a reason worth writing down:
+ *
+ *   Reading  — Confluence's content permission endpoint, called with the app's
+ *              own authority, asking whether a named person may read a named
+ *              page. It needs no consent from that person, so the backlinks
+ *              panel works for everyone the moment the app is installed.
+ *
+ *              Forge ships an `authorize()` helper that looks like the right
+ *              tool and is documented as the companion to `asApp`. It is not
+ *              used here: its implementation calls `asUser()`, so it carries
+ *              the same consent prompt, and every reader would meet a "grant
+ *              access" screen on an ordinary page. The endpoint underneath is
+ *              the same one, so this calls it directly.
+ *
+ *   Rebuilding — `asUser()`, acting as the caller, because Confluence will not
+ *              tell an app what someone else is allowed to do: asked with the
+ *              app's own authority it answers 401. Acting as the caller costs
+ *              that person a one-time consent, which is why it is asked when
+ *              they press the button and never on page load. Nobody meets a
+ *              consent screen for reading a report.
  */
 
 import api, { route } from '@forge/api';
 
-/** The id filter takes at most 250 values in one call. */
-const MAX_IDS = 250;
+/**
+ * How many pages are permission-checked for one report.
+ *
+ * Each check is a request, so this is the real cost of a large backlinks list.
+ * Beyond the cap the report says it is showing a sample rather than quietly
+ * dropping the rest.
+ */
+export const MAX_CHECKS = 60;
 
-const chunk = (list, size) => {
-  const out = [];
-  for (let i = 0; i < list.length; i += size) out.push(list.slice(i, i + size));
+/** Run promises a few at a time, so sixty checks are not sixty round trips. */
+async function inParallel(items, worker, width = 10) {
+  const out = new Array(items.length);
+  let next = 0;
+  const runners = Array.from({ length: Math.min(width, items.length) }, async () => {
+    for (;;) {
+      const i = next;
+      next += 1;
+      if (i >= items.length) return;
+      out[i] = await worker(items[i], i);
+    }
+  });
+  await Promise.all(runners);
   return out;
-};
+}
 
 /**
- * Which of these page ids the caller may actually see.
+ * Which of these page ids the caller may read.
  *
- * Asked as the user, so Confluence applies exactly the permissions it would
- * apply if they navigated to the page themselves. Anything it declines to
- * return is treated as not visible.
- *
- * `request` is injected so this can be tested without Forge.
+ * `check` is injected so this can be tested without Forge. It answers for one
+ * page at a time because that is what Confluence's content permission API
+ * takes; there is no bulk form of it.
  */
-export async function visiblePages(ids, { request = asUserRequest } = {}) {
+export async function readablePages(ids, { accountId, check = confluenceCanRead } = {}) {
   const unique = [...new Set(ids.map(String))].filter((id) => /^\d+$/.test(id));
-  if (unique.length === 0) return new Map();
+  if (unique.length === 0 || !accountId) return { allowed: new Set(), checked: 0, capped: false };
 
-  const visible = new Map();
-
-  for (const group of chunk(unique, MAX_IDS)) {
-    let response;
+  const considered = unique.slice(0, MAX_CHECKS);
+  const verdicts = await inParallel(considered, async (id) => {
     try {
-      response = await request(route`/wiki/api/v2/pages?id=${group.join(',')}&limit=${String(group.length)}`);
+      return [id, await check(id, accountId)];
     } catch {
-      // The call failed. That is not permission, so this group stays hidden.
-      continue;
+      // The check failed. That is not permission.
+      return [id, false];
     }
-    if (!response?.ok) continue;
+  });
 
-    let body;
-    try { body = await response.json(); } catch { continue; }
+  return {
+    allowed: new Set(verdicts.filter(([, ok]) => ok).map(([id]) => id)),
+    checked: considered.length,
+    capped: unique.length > considered.length,
+  };
+}
 
-    for (const page of body?.results ?? []) {
-      visible.set(String(page.id), {
-        id: String(page.id),
-        title: page.title,
-        spaceId: page.spaceId,
-        webui: page?._links?.webui ?? '',
-      });
-    }
-  }
+async function confluenceCanRead(contentId, accountId) {
+  const response = await api.asApp().requestConfluence(
+    route`/wiki/rest/api/content/${String(contentId)}/permission/check`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({
+        subject: { type: 'user', identifier: String(accountId) },
+        operation: 'read',
+      }),
+    },
+  );
+  if (!response.ok) return false;
+  const verdict = await response.json();
+  return Boolean(verdict?.hasPermission);
+}
 
-  return visible;
+/**
+ * Keep only the rows whose source page the caller may read, and say how many
+ * were withheld.
+ *
+ * The count is shown rather than hidden. "4 pages link here, and 2 more you do
+ * not have access to" is honest and useful; silently showing four is a lie by
+ * omission, and showing six is the leak.
+ */
+export async function filterBySource(rows, options = {}) {
+  const { allowed, capped } = await readablePages(rows.map((r) => r.sourceId), options);
+  const permitted = rows.filter((r) => allowed.has(String(r.sourceId)));
+  return {
+    rows: permitted,
+    withheld: rows.length - permitted.length,
+    capped,
+  };
 }
 
 function asUserRequest(url) {
@@ -72,40 +131,61 @@ function asUserRequest(url) {
 }
 
 /**
- * Keep only the rows whose source page the caller may see, and say how many
- * were withheld.
+ * The administrator check, with its reasoning.
  *
- * The count is shown rather than hidden. "4 pages link here, and 2 more you do
- * not have access to" is honest and useful; silently showing four is a lie by
- * omission, and showing six is the leak.
+ * It says why, not only whether. A flat "you need administrator permission"
+ * shown to someone who *is* an administrator is a dead end for them and
+ * invisible to us — it looks identical whether the answer is genuinely no, the
+ * call was refused, or the app is missing a scope.
+ *
+ * `accountId` must come from the platform's context and never from the caller's
+ * payload. A caller who could name the account being checked could name an
+ * administrator's and let themselves through, which is the whole gate gone.
  */
-export async function filterBySource(rows, options) {
-  const visible = await visiblePages(rows.map((r) => r.sourceId), options);
-  const allowed = rows.filter((r) => visible.has(String(r.sourceId)));
-  return {
-    rows: allowed.map((r) => ({ ...r, source: visible.get(String(r.sourceId)) })),
-    withheld: rows.length - allowed.length,
-  };
+export async function checkSiteAdmin({ request = asUserRequest } = {}) {
+  // The operations are not returned unless they are asked for by name. Without
+  // the expand this endpoint answers happily and says nothing about
+  // permissions, so every caller reads as "not an administrator" — which is
+  // safe, and completely useless.
+  //
+  // A failure here is deliberately not caught. Forge raises a specific error
+  // when the caller has not yet granted the app permission to act for them, and
+  // catching it would swallow the prompt that asks for exactly that: the button
+  // would refuse forever with no way for anyone to fix it.
+  const response = await request(route`/wiki/rest/api/user/current?expand=operations`);
+
+  if (!response?.ok) {
+    return {
+      ok: false,
+      reason: `Confluence would not say what you may do (${response?.status ?? 'no response'}).`,
+    };
+  }
+
+  let user;
+  try {
+    user = await response.json();
+  } catch {
+    return { ok: false, reason: 'Confluence answered with something this app could not read.' };
+  }
+
+  const operations = user?.operations ?? [];
+  // Confluence lists what the person may do, scoped to a target. Administering
+  // the application is the one that matters; administering a single space is
+  // not the same thing and must not pass.
+  const admin = operations.some?.(
+    (op) => op?.operation === 'administer' && op?.targetType === 'application',
+  );
+
+  if (admin) return { ok: true, reason: 'you administer this Confluence' };
+  if (operations.length === 0) {
+    return { ok: false, reason: 'Confluence returned no permissions for you at all.' };
+  }
+  return { ok: false, reason: 'you do not administer this Confluence.' };
 }
 
-/**
- * Whether the caller administers this Confluence site.
- *
- * Used only to gate the things that cost the site something — starting a sweep,
- * changing settings — never to gate reading, which is governed by the page
- * permissions above.
- */
-export async function isSiteAdmin({ request = asUserRequest } = {}) {
-  try {
-    const response = await request(route`/wiki/rest/api/user/current`);
-    if (!response?.ok) return false;
-    const me = await response.json();
-    // Confluence reports the operations the current user may perform on the
-    // site. Administering is the one that matters here.
-    return Boolean(me?.operations?.some?.((op) => op?.operation === 'administer'));
-  } catch {
-    return false;
-  }
+/** Whether the caller administers this Confluence. */
+export async function isSiteAdmin(options) {
+  return (await checkSiteAdmin(options)).ok;
 }
 
 /**
@@ -116,8 +196,11 @@ export async function isSiteAdmin({ request = asUserRequest } = {}) {
  */
 export function requireAdmin(check, handler) {
   return async (payload, context) => {
-    if (!(await check())) {
-      return { error: 'This needs Confluence administrator permission.' };
+    const verdict = await check();
+    const ok = typeof verdict === 'boolean' ? verdict : verdict?.ok;
+    if (!ok) {
+      const why = typeof verdict === 'object' && verdict?.reason ? ` — ${verdict.reason}` : '';
+      return { error: `This needs Confluence administrator permission${why}` };
     }
     return handler(payload, context);
   };

@@ -221,18 +221,32 @@ function Settings() {
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState('');
 
-  if (loading) return <Spinner label="Checking" />;
+  if (loading) {
+    return (
+      <Stack space="space.100">
+        <Spinner label="Checking" />
+        {note && <Text>{note}</Text>}
+      </Stack>
+    );
+  }
   if (error) return <SectionMessage appearance="error"><Text>{error}</Text></SectionMessage>;
 
   const sweep = data?.sweep ?? {};
-  const admin = data?.admin;
 
   const start = async () => {
     setBusy(true);
     setNote('');
-    const result = await invoke('runSweep', {});
-    setBusy(false);
-    setNote(result?.error ?? result?.skipped ?? 'Sweep started.');
+    try {
+      const result = await invoke('runSweep', {});
+      setNote(result?.error ?? result?.skipped ?? result?.queueError
+        ?? `Sweep started. ${JSON.stringify(result?.queued ?? null)}`);
+    } catch (error) {
+      // Without this the failure is silent: the button returns to its resting
+      // state and nothing anywhere says why nothing happened.
+      setNote(`Could not start: ${String(error?.message ?? error)}`);
+    } finally {
+      setBusy(false);
+    }
     again();
   };
 
@@ -253,16 +267,17 @@ function Settings() {
         <Text>Links that do not land: {sweep.problems ?? 0}</Text>
       </Stack>
 
-      {admin ? (
-        <Inline space="space.100" alignBlock="center">
-          <Button appearance="primary" onClick={start} isDisabled={busy}>
-            {busy ? 'Starting' : 'Rebuild the index now'}
-          </Button>
-          {note && <Text>{note}</Text>}
-        </Inline>
-      ) : (
-        <Text>Rebuilding the index needs Confluence administrator permission.</Text>
-      )}
+      <Inline space="space.100" alignBlock="center">
+        <Button appearance="primary" onClick={start} isDisabled={busy}>
+          {busy ? 'Starting' : 'Rebuild the index now'}
+        </Button>
+        {note && <Text>{note}</Text>}
+      </Inline>
+      <Text>
+        Rebuilding needs Confluence administrator permission, which is checked
+        when you press the button. The first time, Confluence will ask you to let
+        the app confirm who you are.
+      </Text>
 
       <Heading as="h3">What this app can and cannot see</Heading>
       <Stack space="space.050">

@@ -17,7 +17,9 @@ import {
 } from './crawl.js';
 import { refsForPage, fold, PROBLEM_STATES, STATES } from './graph.js';
 import * as store from './store.js';
-import { filterBySource, isSiteAdmin, requireAdmin, visiblePages } from './authz.js';
+import {
+  filterBySource, readablePages, checkSiteAdmin, requireAdmin,
+} from './authz.js';
 
 // @forge/resolver ships as CommonJS; under ESM the constructor arrives on
 // `.default`. Reading it either way keeps the app working across both.
@@ -182,25 +184,36 @@ async function loadSweep() {
 async function beginSweep() {
   const state = newSweep(Math.floor(Date.now() / 1000));
   await kvs.set(SWEEP, state);
-  await crawlQueue.push({ reason: 'start' });
-  return state;
+  // The push result is handed back to the caller. Forge's logs carry only
+  // errors for a deployed app, so a successful-but-inert queue is invisible
+  // there; the app has to say what happened itself.
+  let queued;
+  try {
+    queued = await crawlQueue.push({ body: { reason: 'start' } });
+  } catch (error) {
+    return { ...state, queueError: String(error?.message ?? error).slice(0, 200) };
+  }
+  return { ...state, queued: queued ?? null };
 }
 
-/** One queued step, which queues the next while there is more to do. */
-export const crawlStep = (() => {
-  const resolver = new Resolver();
-  resolver.define('step', async () => {
-    const state = await loadSweep();
-    if (!isRunning(state)) return { done: true };
+/**
+ * One queued step, which queues the next while there is more to do.
+ *
+ * A plain function, not a resolver: with @forge/events v2 the consumer module
+ * names this handler directly.
+ */
+export async function crawlStep() {
+  const state = await loadSweep();
+  console.log('crawlStep woke', state.phase, state.pages);
+  if (!isRunning(state)) return { done: true };
 
-    const next = await sweepStep(state, await deps());
-    await kvs.set(SWEEP, next);
+  const next = await sweepStep(state, await deps());
+  console.log('crawlStep done', next.phase, next.pages, next.edges, next.error || '');
+  await kvs.set(SWEEP, next);
 
-    if (isRunning(next)) await crawlQueue.push({ reason: 'continue' });
-    return { phase: next.phase, pages: next.pages };
-  });
-  return resolver.getDefinitions();
-})();
+  if (isRunning(next)) await crawlQueue.push({ body: { reason: 'continue' } });
+  return { phase: next.phase, pages: next.pages };
+}
 
 /** The nightly sweep. Skipped if one is already running. */
 export async function startSweep() {
@@ -233,7 +246,7 @@ export async function catchUp() {
  * person asking may see, by asking Confluence rather than by guessing. The
  * number of rows removed is reported instead of hidden.
  */
-async function backlinksFor({ pageId, spaceKey, title }) {
+async function backlinksFor({ pageId, spaceKey, title, accountId }) {
   if (!pageId) return { rows: [], withheld: 0, total: 0 };
 
   const page = await store.loadPage(pageId);
@@ -244,7 +257,7 @@ async function backlinksFor({ pageId, spaceKey, title }) {
   });
 
   const { rows, truncated } = await store.edgesPointingAt(refs);
-  const { rows: allowed, withheld } = await filterBySource(rows);
+  const { rows: allowed, withheld, capped } = await filterBySource(rows, { accountId });
 
   // One row per source page: a page that links here three times is one entry.
   const bySource = new Map();
@@ -260,12 +273,12 @@ async function backlinksFor({ pageId, spaceKey, title }) {
       String(a.sourceTitle ?? '').localeCompare(String(b.sourceTitle ?? ''))),
     withheld,
     total: rows.length,
-    truncated,
+    truncated: truncated || capped,
   };
 }
 
 /** The link health of one space. */
-async function spaceReport({ spaceKey }) {
+async function spaceReport({ spaceKey, accountId }) {
   const space = fold(spaceKey);
   if (!space) return { error: 'No space was given.' };
 
@@ -275,16 +288,15 @@ async function spaceReport({ spaceKey }) {
     for (const row of rows) found.push({ ...row, meaning: STATES[state] });
   }
 
-  const { rows: visible, withheld } = await filterBySource(found);
+  const { rows: visible, withheld } = await filterBySource(found, { accountId });
   const { items: orphans, truncated } = await store.orphansIn(space);
-  const orphanIds = orphans.map((o) => o.id);
-  const orphansVisible = await visiblePages(orphanIds);
+  const { allowed } = await readablePages(orphans.map((o) => o.id), { accountId });
 
   return {
     problems: visible,
     withheld,
     orphans: orphans
-      .filter((o) => orphansVisible.has(String(o.id)))
+      .filter((o) => allowed.has(String(o.id)))
       .map((o) => ({ id: o.id, title: o.title, spaceKey: o.spaceKey })),
     orphansTruncated: truncated,
     sweep: await loadSweep(),
@@ -298,25 +310,33 @@ const resolver = new Resolver();
 resolver.define('backlinks', async ({ payload, context }) => {
   await rememberSite(context);
   const pageId = payload?.pageId ?? context?.extension?.content?.id;
-  return backlinksFor({ pageId, spaceKey: payload?.spaceKey, title: payload?.title });
+  return backlinksFor({
+    pageId,
+    spaceKey: payload?.spaceKey,
+    title: payload?.title,
+    accountId: context?.accountId,
+  });
 });
 
 resolver.define('spaceReport', async ({ payload, context }) => {
   await rememberSite(context);
   const key = payload?.spaceKey ?? context?.extension?.space?.key;
-  return spaceReport({ spaceKey: key });
+  return spaceReport({ spaceKey: key, accountId: context?.accountId });
 });
 
 resolver.define('status', async ({ context }) => {
   await rememberSite(context);
-  const sweep = await loadSweep();
-  return { sweep, admin: await isSiteAdmin() };
+  // Deliberately does not ask whether the caller administers the site. That
+  // question is asked as the caller, which Forge gates behind a one-time
+  // consent, and nobody should meet a consent screen for opening a page. The
+  // gate lives on the button.
+  return { sweep: await loadSweep() };
 });
 
 // Only these two cost the site something, so only these two are gated.
-resolver.define('runSweep', requireAdmin(isSiteAdmin, async () => beginSweep()));
+resolver.define('runSweep', requireAdmin(checkSiteAdmin, async () => beginSweep()));
 
-resolver.define('stopSweep', requireAdmin(isSiteAdmin, async () => {
+resolver.define('stopSweep', requireAdmin(checkSiteAdmin, async () => {
   const state = await loadSweep();
   const stopped = { ...state, phase: 'stopped', finishedAt: Math.floor(Date.now() / 1000) };
   await kvs.set(SWEEP, stopped);
@@ -335,7 +355,7 @@ export const byline = (() => {
   const bylineResolver = new Resolver();
   bylineResolver.define('byline', async ({ context }) => {
     const pageId = context?.extension?.content?.id;
-    const { rows, withheld } = await backlinksFor({ pageId });
+    const { rows, withheld } = await backlinksFor({ pageId, accountId: context?.accountId });
     const n = rows.length;
     return {
       title: n === 0 ? 'No backlinks' : `${n} backlink${n === 1 ? '' : 's'}`,

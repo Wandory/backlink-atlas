@@ -13,7 +13,7 @@ import { Queue } from '@forge/events';
 import ResolverModule from '@forge/resolver';
 
 import {
-  newSweep, sweepStep, isRunning, reindexOne, forgetPage, PAGES_PER_STEP,
+  newSweep, sweepStep, isRunning, catchUp as runCatchUp, PAGES_PER_STEP,
 } from './crawl.js';
 import { refsForPage, fold, PROBLEM_STATES, STATES } from './graph.js';
 import * as store from './store.js';
@@ -112,6 +112,28 @@ function crawlDeps({ spaces, baseUrl }) {
       };
     },
 
+    async fetchRecentPages({ cursor, limit }) {
+      const size = Math.min(limit ?? 50, 250);
+      const url = cursor
+        ? route`/wiki/api/v2/pages?body-format=storage&status=current&sort=-modified-date&limit=${String(size)}&cursor=${cursor}`
+        : route`/wiki/api/v2/pages?body-format=storage&status=current&sort=-modified-date&limit=${String(size)}`;
+      const response = await asApp().requestConfluence(url, { headers: { Accept: 'application/json' } });
+      if (!response.ok) {
+        throw new Error(`Confluence returned ${response.status} listing recent pages`);
+      }
+      const body = await response.json();
+      return {
+        items: (body?.results ?? []).map((page) => ({
+          id: String(page.id),
+          title: page.title,
+          spaceKey: spaces.get(String(page.spaceId)) ?? 'unknown',
+          version: page?.version?.number ?? 0,
+          body: page.body,
+        })),
+        cursor: nextCursor(body),
+      };
+    },
+
     async fetchIndexedPages({ cursor, limit }) {
       // The resolve phase walks what was just indexed, not Confluence again.
       const from = cursor ? JSON.parse(cursor) : { spaceIndex: 0, inner: null };
@@ -190,39 +212,16 @@ export async function startSweep() {
 /* ------------------------------- triggers ------------------------------- */
 
 /**
- * A page was created, edited or deleted.
+ * The hourly catch-up.
  *
- * Only that page is re-read. What this cannot catch is the other half: renaming
- * a page can break links on pages that named it by its old title, and those are
- * only found by the next sweep. Every report says when the last sweep finished,
- * so a reader can judge how fresh the answer is rather than being told a
- * comforting nothing.
+ * Re-reads the pages edited since it last ran. What it cannot catch is the
+ * other half: renaming a page can break links on pages nobody touched, and
+ * those are found by the nightly sweep. Every report says when the index was
+ * last rebuilt, so a reader can judge how fresh the answer is rather than being
+ * told a comforting nothing.
  */
-export async function onPageEvent(event) {
-  const id = event?.content?.id ?? event?.page?.id;
-  if (!id) return { ignored: 'no page id on the event' };
-
-  if (event?.eventType?.includes('removed')) {
-    await forgetPage(id, await deps());
-    return { forgotten: String(id) };
-  }
-
-  const bound = await deps();
-  const response = await asApp().requestConfluence(
-    route`/wiki/api/v2/pages/${String(id)}?body-format=storage`,
-    { headers: { Accept: 'application/json' } },
-  );
-  if (!response.ok) return { skipped: `Confluence returned ${response.status}` };
-
-  const page = await response.json();
-  const spaces = await spaceKeys();
-  return reindexOne({
-    id: String(page.id),
-    title: page.title,
-    spaceKey: spaces.get(String(page.spaceId)) ?? 'unknown',
-    version: page?.version?.number ?? 0,
-    body: page.body,
-  }, bound);
+export async function catchUp() {
+  return runCatchUp(await deps());
 }
 
 /* ------------------------------ the reports ----------------------------- */

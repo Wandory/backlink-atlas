@@ -59,8 +59,15 @@ and showing six is a leak.
 
 ## How it stays current
 
-A page you edit is re-read at once. Everything else is caught by a nightly
-sweep, because renaming a page can break links on pages you never touched.
+Pages edited in the last hour are re-read hourly. Everything else is caught by
+a nightly sweep, because renaming a page can break links on pages you never
+touched.
+
+The hourly pass reads the newest-edited pages and stops as soon as it reaches
+versions it already has — usually one request. Confluence will push an event on
+every edit instead, but only to an app holding a classic scope over the summary
+of all content, and three narrow read-only scopes are most of why this app is
+worth installing.
 
 A full sweep is far longer than the 25 seconds a Forge function gets, so it is
 a chain of queued steps, each resuming at the cursor the last one left. Every

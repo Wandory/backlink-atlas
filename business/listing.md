@@ -110,7 +110,7 @@ The index is built with the app's permissions, so it knows about every page on t
 
 ### Freshness
 
-A page you edit is re-read immediately. Renaming a page can break links on pages you never touched, and those are found by the nightly sweep. Every report says when the index was last rebuilt, so you can judge the answer instead of assuming it is current.
+Pages edited in the last hour are re-read hourly. Renaming a page can break links on pages you never touched, and those are found by the nightly sweep. Every report says when the index was last rebuilt, so you can judge the answer instead of assuming it is current.
 
 ### Open source
 
@@ -152,6 +152,6 @@ First release.
 - Backlinks macro and byline item: what links to this page.
 - Link health per space: links to deleted pages, links to renamed headings, and titles that more than one page carries.
 - Orphan pages: reachable from the tree, but from no page's text.
-- Nightly index rebuild, plus immediate re-reading of any page you edit.
+- Nightly index rebuild, plus an hourly pass over whatever was edited since the last one.
 - Read-only, no external permissions, page text never stored.
 ```

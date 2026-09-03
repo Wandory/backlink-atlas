@@ -274,6 +274,60 @@ export async function reindexOne(page, deps) {
   return { id: read.id, edges: read.edges.length, problems: result.problems };
 }
 
+/**
+ * Catching up on what changed, without being told.
+ *
+ * Confluence will send an app an event on every page edit, but only if the app
+ * holds `read:confluence-content.summary` — a classic scope covering the
+ * summary of all content, with no granular equivalent. This app holds three
+ * narrow read-only scopes and that is most of what makes it worth installing,
+ * so it does not take the wider one to save itself some work.
+ *
+ * Instead it asks the question the other way round: list pages newest-edited
+ * first and re-read the ones whose version has moved. Sorted that way, the
+ * changed pages are all at the front, so the walk stops as soon as it has seen
+ * `settled` pages in a row that are already current — usually within one
+ * request. On a quiet hour it costs a single call.
+ *
+ * `max` is the ceiling for a busy hour: past it the walk gives up and leaves
+ * the rest to the nightly sweep rather than reading the site twice.
+ */
+export async function catchUp(deps, { max = 200, settled = 10 } = {}) {
+  let cursor = null;
+  let seen = 0;
+  let reindexed = 0;
+  let unchanged = 0;
+
+  while (seen < max) {
+    const { items, cursor: next } = await deps.fetchRecentPages({
+      cursor,
+      limit: Math.min(50, max - seen),
+    });
+    if (items.length === 0) break;
+
+    for (const page of items) {
+      seen += 1;
+      const known = await deps.loadPage(String(page.id));
+
+      // Same version means this page and everything older is already indexed.
+      if (known && int(known.version) === int(page.version)) {
+        unchanged += 1;
+        if (unchanged >= settled) return { seen, reindexed, stoppedEarly: true };
+        continue;
+      }
+
+      unchanged = 0;
+      await reindexOne(page, deps);
+      reindexed += 1;
+    }
+
+    if (!next) break;
+    cursor = next;
+  }
+
+  return { seen, reindexed, stoppedEarly: false };
+}
+
 /** A page was deleted: it points at nothing now, and nothing should claim it does. */
 export async function forgetPage(pageId, deps) {
   await deps.replaceEdges(String(pageId), []);

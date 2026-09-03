@@ -32,10 +32,10 @@ plainly, because they are the app's own:
   way to know whether an outside address still answers.
 - **Attachments are not checked.** The app does not ask for permission to read
   them and says so rather than guessing.
-- **The index is as fresh as the last sweep.** Editing a page updates that page
-  at once. Renaming a page can break links on other pages, and those are found
-  by the next sweep, not immediately. Every report states when the index was
-  last rebuilt.
+- **The index is as fresh as the last pass over it.** Editing a page updates
+  that page within the hour. Renaming a page can break links on other pages,
+  and those are found by the nightly sweep, not immediately. Every report
+  states when the index was last rebuilt.
 - **It can only see what it is allowed to see**, and so can you. Results are
   filtered to the pages Confluence confirms you may open.
 

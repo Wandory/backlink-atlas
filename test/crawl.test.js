@@ -2,6 +2,7 @@ import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   newSweep, sweepStep, isRunning, readPage, reindexOne, forgetPage, memoLookup,
+  catchUp,
 } from '../src/crawl.js';
 import { fold, refsForPage } from '../src/graph.js';
 
@@ -49,6 +50,8 @@ const SITE = [
 function harness(site = SITE, { pageSize = 2 } = {}) {
   const pages = new Map();   // id -> page row
   const edges = new Map();   // key -> edge row (with .key)
+  let recent = [];           // what the newest-edited listing returns
+  const calls = { recent: 0 };
   let clock = 1_700_000;
   let reads = 0;
 
@@ -70,6 +73,15 @@ function harness(site = SITE, { pageSize = 2 } = {}) {
 
     async fetchPages({ cursor, limit }) {
       const { items, cursor: next } = paged(site, cursor, Math.min(limit, pageSize));
+      return { items: items.map(asApi), cursor: next };
+    },
+
+    async fetchRecentPages({ cursor, limit }) {
+      // Newest-edited first is what the real endpoint promises; the harness
+      // keeps an explicit order so a test can decide what "recent" means.
+      const ordered = recent.length ? recent : [...site].reverse();
+      const { items, cursor: next } = paged(ordered, cursor, Math.min(limit, pageSize));
+      calls.recent += 1;
       return { items: items.map(asApi), cursor: next };
     },
 
@@ -138,7 +150,12 @@ function harness(site = SITE, { pageSize = 2 } = {}) {
     return [...edges.values()].filter((e) => refs.includes(e.targetRef));
   };
 
-  return { deps, pages, edges, runSweep, backlinksTo, reads: () => reads, asApi };
+  const setRecent = (list) => { recent = list; };
+
+  return {
+    deps, pages, edges, runSweep, backlinksTo, asApi, setRecent, calls,
+    reads: () => reads,
+  };
 }
 
 describe('reading one page', () => {
@@ -316,5 +333,70 @@ describe('not asking storage the same question twice', () => {
 
   test('space keys fold the same way in storage and in a filter', () => {
     assert.equal(fold('OPS'), 'ops');
+  });
+});
+
+describe('the hourly catch-up', () => {
+  test('a page edited since the sweep is re-read', async () => {
+    const h = harness(SITE, { pageSize: 50 });
+    await h.runSweep();
+
+    const edited = {
+      ...SITE[3], version: 2,
+      storage: '<ac:link><ri:page ri:content-title="Deploy Runbook"/></ac:link>',
+    };
+    h.setRecent([edited, ...SITE.filter((p) => p.id !== edited.id)]);
+
+    const result = await catchUp(h.deps, { settled: 2 });
+    assert.equal(result.reindexed, 1);
+    const [edge] = await h.deps.loadEdges('4');
+    assert.equal(edge.state, 'ok');
+  });
+
+  test('an hour in which nothing changed costs one request', async () => {
+    const h = harness(SITE, { pageSize: 50 });
+    await h.runSweep();
+    const before = h.calls.recent;
+
+    const result = await catchUp(h.deps, { settled: 3 });
+    assert.equal(result.reindexed, 0);
+    assert.equal(result.stoppedEarly, true, 'it must stop once it reaches known versions');
+    assert.equal(h.calls.recent - before, 1, `made ${h.calls.recent - before} requests`);
+  });
+
+  test('it stops at the first run of unchanged pages rather than reading on', async () => {
+    const h = harness(SITE, { pageSize: 50 });
+    await h.runSweep();
+    h.setRecent([...SITE].reverse());
+
+    const result = await catchUp(h.deps, { settled: 2 });
+    assert.equal(result.stoppedEarly, true);
+    assert.ok(result.seen <= 3, `looked at ${result.seen} pages to find nothing`);
+  });
+
+  test('a page the index has never seen is indexed', async () => {
+    const h = harness(SITE, { pageSize: 50 });
+    await h.runSweep();
+
+    const fresh = {
+      id: '9', spaceKey: 'OPS', title: 'Brand New', version: 1,
+      storage: '<ac:link><ri:page ri:content-title="Deploy Runbook"/></ac:link>',
+    };
+    h.setRecent([fresh, ...SITE]);
+
+    const result = await catchUp(h.deps, { settled: 2 });
+    assert.equal(result.reindexed, 1);
+    assert.equal(h.pages.get('9').title, 'Brand New');
+  });
+
+  test('a busy hour is bounded, and says it did not finish', async () => {
+    const h = harness(SITE, { pageSize: 2 });
+    await h.runSweep();
+    // Every page looks edited, so nothing settles and the ceiling is what stops it.
+    h.setRecent(SITE.map((p) => ({ ...p, version: p.version + 1 })));
+
+    const result = await catchUp(h.deps, { max: 3, settled: 10 });
+    assert.equal(result.stoppedEarly, false);
+    assert.ok(result.seen <= 3, `read ${result.seen} pages despite a ceiling of 3`);
   });
 });

@@ -49,7 +49,8 @@ only possible with a list of the headings that exist. Headings are titles of
 sections, not content; if a page has more than 300 the list is dropped and the
 app reports that it cannot check that page's anchors, rather than storing more.
 
-**For each link:** the id, title and space of the page it is on, a reference to
+**For each link:** the id, title and space of the page it is on, a short hash
+that tells this link apart from the others on the same page, a reference to
 what it points at, the target's title and space as the link named them, the
 heading it points at if any, what kind of link it is, whether it lands, how
 many times it appears, and when it was last seen.
@@ -99,9 +100,8 @@ of its own. There is nowhere else for the data to be.
 The index is kept until it is replaced by the next sweep, or until the app is
 uninstalled. Uninstalling removes the app's storage.
 
-Deleting a page removes it and its links from the index the next time the app
-hears about it — immediately if the platform delivers the event, and at the
-next sweep otherwise.
+Deleting a page removes it and its links from the index at the next nightly
+sweep, which is when the app next sees the site whole.
 
 ## Sub-processors
 

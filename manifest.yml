@@ -10,16 +10,11 @@
 # even if the code attempted one.
 
 app:
-  id: ari:cloud:ecosystem::app/00000000-0000-0000-0000-000000000000
+  id: ari:cloud:ecosystem::app/2beb7dcf-6bc6-4c40-8861-f5df230cf96c
   runtime:
     name: nodejs22.x
-
-  # The graph. Two entities, because two questions are asked of it: "which page
-  # is this title?" and "who points at this page?"
   storage:
     entities:
-      # One row per page. Also the lookup that turns a link written as a title
-      # into the page it means.
       - name: page
         attributes:
           spaceKey:
@@ -38,33 +33,30 @@ app:
             type: integer
           indexedAt:
             type: integer
-          # The page's headings, folded, so a link to one of them can be
-          # checked. Capped; past the cap the app says it cannot check rather
-          # than guessing.
           anchors:
             type: any
           anchorsTruncated:
             type: boolean
         indexes:
-          # Every page in a space, in title order; also resolves title -> id.
           - name: by-space-title
             partition:
               - spaceKey
             range:
               - titleFold
-          # Orphans are the pages in a space whose inCount is zero.
           - name: by-space-incoming
             partition:
               - spaceKey
             range:
               - inCount
-
-      # One row per (page, distinct target). Deliberately one row per edge and
-      # not a list per page: a list would grow without bound on a hub page, and
-      # the reverse lookup is the whole point of the app.
       - name: edge
         attributes:
           sourceId:
+            type: string
+          # Distinguishes this edge from the page's others. It is the same hash
+          # the row's key ends with, kept as an attribute because the by-source
+          # index needs a range and this is the only value certain to be
+          # distinct within one page.
+          slot:
             type: string
           sourceSpace:
             type: string
@@ -87,18 +79,16 @@ app:
           seenAt:
             type: integer
         indexes:
-          # The reverse index. This one index is the product.
           - name: by-target
             partition:
               - targetRef
             range:
               - sourceId
-          # Everything this page points at — needed to retract a page's edges
-          # when it is re-indexed or deleted.
           - name: by-source
             partition:
               - sourceId
-          # The broken-links report for one space.
+            range:
+              - slot
           - name: by-space-state
             partition:
               - sourceSpace
@@ -145,6 +135,9 @@ modules:
       resolver:
         function: resolver
       title: Link health
+      # The path this page lives at inside a space, which the platform requires
+      # a space page to name for itself.
+      route: link-health
 
   # Site-wide settings and the indexing status.
   confluence:globalSettings:
@@ -154,15 +147,6 @@ modules:
       resolver:
         function: resolver
       title: Backlink Atlas
-
-  # Keeping the index fresh without re-reading the whole site.
-  trigger:
-    - key: backlinks-page-events
-      function: onPageEvent
-      events:
-        - avi:confluence:created:page
-        - avi:confluence:updated:page
-        - avi:confluence:removed:page
 
   # A full sweep is far longer than one invocation allows, so it is a chain of
   # queued steps, each picking up at the cursor the last one left.
@@ -174,17 +158,28 @@ modules:
         method: step
 
   scheduledTrigger:
+    # The whole site, once a night. This is what finds links broken by a page
+    # being renamed somewhere else, which nothing else can see.
     - key: backlinks-nightly
       function: startSweep
       interval: day
+
+    # What changed in the last hour. Confluence will push page events to an app
+    # that holds read:confluence-content.summary — a classic scope over the
+    # summary of all content, with no granular equivalent. Three narrow
+    # read-only scopes are most of why this app is worth installing, so it
+    # reads the newest-edited pages instead of widening them.
+    - key: backlinks-catchup
+      function: catchUp
+      interval: hour
 
   function:
     - key: resolver
       handler: index.handler
     - key: byline
       handler: index.byline
-    - key: onPageEvent
-      handler: index.onPageEvent
+    - key: catchUp
+      handler: index.catchUp
     - key: startSweep
       handler: index.startSweep
     - key: crawlStep

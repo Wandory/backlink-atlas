@@ -112,8 +112,21 @@ export function refsForPage({ id, spaceKey, title }) {
  * by a hash of the link so two different links from the same page never
  * collide.
  */
+/**
+ * The part of an edge's key that distinguishes it from the page's other edges.
+ *
+ * Stored as an attribute as well as being in the key, because the by-source
+ * index needs a range and this is the only value that is guaranteed distinct
+ * within one page. The platform does not document whether a partition and
+ * range may repeat, and a graph that silently loses edges is not worth finding
+ * out the hard way.
+ */
+export function edgeSlot(link) {
+  return hash(identity(link));
+}
+
 export function edgeKey(sourceId, link) {
-  const key = `${sourceId}.${hash(identity(link))}`;
+  const key = `${sourceId}.${edgeSlot(link)}`;
   if (!SAFE_KEY.test(key) || key.length > MAX_KEY) {
     // Unreachable with a numeric page id, and an assertion rather than a
     // silent corruption if that assumption ever stops holding.
@@ -145,6 +158,7 @@ export function edgeRow({ source, link, state = 'new', at = 0 }) {
     sourceId: String(source.id),
     sourceSpace: fold(source.spaceKey) || 'unknown',
     sourceTitle: source.title,
+    slot: edgeSlot(link),
     targetRef: targetRef(link, source.spaceKey),
     targetTitle: link.title,
     targetSpace: link.spaceKey,

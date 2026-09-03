@@ -23,8 +23,8 @@ minutes; on a large one it can be an hour or more. It runs in the background as
 a chain of small steps, so you can close the page — nothing is lost, and the
 status shows how far it has got.
 
-After that it rebuilds itself nightly, and re-reads any page you edit
-immediately.
+After that it keeps itself current on its own: every hour it re-reads whatever
+was edited since the last check, and every night it rebuilds the whole index.
 
 ## What links here
 
@@ -77,8 +77,8 @@ answers, and it does not pretend to.
 them, so a link to one is listed as unchecked rather than judged.
 
 **A rename is not caught instantly.** Editing a page updates that page's links
-at once. But renaming a page can break links on other pages, ones nobody
-touched, and those are found by the nightly sweep. Every report says when the
+within the hour. But renaming a page can break links on other pages, ones
+nobody touched, and those are found by the nightly sweep. Every report says when the
 index was last rebuilt, so you can see how current the answer is.
 
 ## If the numbers look wrong

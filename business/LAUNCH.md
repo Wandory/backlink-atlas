@@ -22,7 +22,7 @@ what to click.
 | App registered with Atlassian | done — `2beb7dcf-6bc6-4c40-8861-f5df230cf96c` |
 | Deployed and installed on a live site | done — development environment |
 | Tested against a real Confluence | **done, and it found the thing it was built to find** |
-| Released to production | next |
+| Released to production | done — version 2.0.0, installed and verified |
 | Submitted to the Marketplace | **you** for the agreement and the submit button, me for the rest |
 
 ### What the live site proved
@@ -45,6 +45,9 @@ Links that no longer land (2)
 ```
 
 The second finding is the one nothing else in Confluence reports.
+
+The production build was then installed alongside it and put through the same
+run from an empty index. It produced the same two findings, word for word.
 
 ---
 

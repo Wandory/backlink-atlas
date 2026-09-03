@@ -5,6 +5,23 @@ than composed under pressure. Character limits are Atlassian's.
 
 ---
 
+## Creating the listing
+
+The Marketplace "Publish a new app" form needs these before anything else:
+
+| Field | Value |
+|---|---|
+| Vendor | **Illia Sharan** — not "Devlink Watch", which is an empty duplicate |
+| Upload app | **Forge app** |
+| Forge app | **Backlink Atlas** — appears only once distribution status is Sharing |
+| Version | 2.0.0 (filled in automatically) |
+| Compatible Atlassian apps | **Confluence Cloud** |
+| App key | `io.github.wandory.backlinkatlas` |
+| App name | `Backlink Atlas` |
+
+Then **Save as private** rather than "Next: Make public" — the listing is filled
+in first and made public at the end, so nothing half-written is ever visible.
+
 ## Name
 
 ```

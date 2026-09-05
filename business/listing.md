@@ -34,17 +34,53 @@ product is also how the catalogue is searched: people look for "confluence
 backlinks", not for a brand they have never heard of. The app calls itself
 **Backlink Atlas** everywhere inside Confluence, where the product is obvious.
 
-## Tagline (max 80)
+## Tagline (max 130, and it must not end in punctuation)
 
 ```
-What links to this page, and which links no longer land.
+What links to this page, and which links no longer land
 ```
-*(55 characters.)*
+*(54 characters. The full stop is deliberately absent — Marketplace rejects a
+tagline that ends in one.)*
 
-## Categories
+## Summary (max 250)
 
-Primary: **Documentation**
-Secondary: **Reports**, **Administration**
+```
+Confluence has no reverse index — nothing answers what links to a page. This builds one: what links here, which links no longer land, and which pages nothing links to. It finds links to a renamed heading, which break in silence.
+```
+*(225 characters.)*
+
+## Categories (choose exactly these two)
+
+- **Content and communication**
+- **Administrative tools**
+
+## Keywords (choose exactly these four)
+
+- **Documentation**
+- **Knowledge Base**
+- **Document Management**
+- **Audit**
+
+None of the four is the word a customer would actually type — there is no
+"backlinks" or "broken links" keyword in Atlassian's fixed list. These are the
+nearest available, and the tagline and summary carry the real words.
+
+## Images to upload
+
+| Field | File |
+|---|---|
+| App logo (144×144) | `web/brand/logo.png` |
+| Banner (1120×548) | `web/brand/banner.png` |
+
+## Other fields on the Details page
+
+| Field | Value |
+|---|---|
+| App stores personal data | **No** |
+| Data security and privacy statement | `https://github.com/Wandory/backlink-atlas/blob/main/PRIVACY.md` |
+| Track work items | `https://github.com/Wandory/backlink-atlas/issues` |
+| Support ticketing system | `https://github.com/Wandory/backlink-atlas/issues` |
+| Release behavior | leave as *Publish app immediately after approval* |
 
 ## Highlights
 
@@ -74,7 +110,7 @@ Reads pages, stores connections, sends nothing anywhere
 It reads page text to find the links, then discards it: what is stored is the graph, not the words. It declares no external permissions, so the platform itself would refuse an outbound call. Everyone sees only the pages they may open, and hidden results are counted, not concealed.
 ```
 
-## Summary (max 1000)
+## Long summary — the "Summary" box on the version page (max 1000)
 
 ```
 Confluence cannot tell you what links to a page. There is no call in its API that answers it, which is why the request for one has sat on Atlassian's public tracker since 2014 with over six hundred votes.

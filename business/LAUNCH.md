@@ -23,7 +23,9 @@ what to click.
 | Deployed and installed on a live site | done — development environment |
 | Tested against a real Confluence | **done, and it found the thing it was built to find** |
 | Released to production | done — version 2.0.0, installed and verified |
-| Submitted to the Marketplace | **you** for the agreement and the submit button, me for the rest |
+| Marketplace app record | done — `1106524273`, private, Runs on Atlassian showing |
+| Listing content | **blocked** — the management console will not save anything. See `business/SUPPORT-REQUEST.md` |
+| Submitted to the Marketplace | waiting on the above |
 
 ### What the live site proved
 
